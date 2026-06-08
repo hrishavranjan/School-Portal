@@ -792,6 +792,19 @@ function startAutoLogout(){
   let rem=IDLE_MINUTES*60;
   const reset=()=>{rem=IDLE_MINUTES*60;updateTimer(rem);};
   ['mousemove','keydown','click','touchstart','scroll'].forEach(ev=>window.addEventListener(ev,reset,{passive:true}));
+window._iframeResetInterval=setInterval(()=>{
+  const iframe=document.querySelector('#studioIframeWrap iframe');
+  if(iframe){
+    try{
+      const idoc=iframe.contentDocument||iframe.contentWindow.document;
+      ['mousemove','keydown','click','touchstart','scroll'].forEach(ev=>{
+        idoc.removeEventListener(ev,reset);
+        idoc.addEventListener(ev,reset,{passive:true});
+      });
+    }catch(e){}
+  }
+},2000);
+
   window._resetIdle=reset;
   timerInterval=setInterval(()=>{
     rem--;updateTimer(rem);
@@ -801,6 +814,7 @@ function startAutoLogout(){
 }
 function stopAutoLogout(){
   if(timerInterval)clearInterval(timerInterval);
+  if(window._iframeResetInterval)clearInterval(window._iframeResetInterval);
   if(window._resetIdle)['mousemove','keydown','click','touchstart','scroll'].forEach(ev=>window.removeEventListener(ev,window._resetIdle));
 }
 function updateTimer(s){
