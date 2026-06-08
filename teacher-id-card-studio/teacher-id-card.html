@@ -728,7 +728,7 @@ function FieldRow({emoji,showEmoji=true,labelText,showLabel=true,value,showValue
 
 /* ✅ FIX: IDCard — QR rendered at absolute pixel size (no *scale multiplication).
    fieldsY is an absolute Y from top of card, independent of photo/name. */
-const IDCard=memo(function IDCard({s,cfg,cfgOverride={},scale=1,templateImage=null}){
+const IDCard=memo(function IDCard({s,cfg,cfgOverride={},scale=1,templateImage=null,onFieldMove=null,dragScale=1}){
   if(!templateImage){
     return(
       <div className="no-tpl-card" style={{width:CARD_W*scale,height:CARD_H*scale}}>
@@ -845,32 +845,63 @@ const IDCard=memo(function IDCard({s,cfg,cfgOverride={},scale=1,templateImage=nu
       )}
 
       {/* Teacher Name */}
-      <div style={{
-        position:'absolute',
-        top:nameRowTop*scale+gTY+(mc.nameY||0)*scale,
-        left:0,right:0,
-        zIndex:4,textTransform:'uppercase',
-        overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',
-        padding:`0 ${5*scale}px`,
-        textAlign:'center',
-        fontSize:nameFontSizeVal*scale,
-        fontFamily:nameFont,fontWeight:900,color:nameColor,
-        marginLeft:(mc.nameX||0)*scale+gTX,
-      }}>
+      <div
+        onPointerDown={onFieldMove?(e)=>{
+          e.stopPropagation();e.preventDefault();
+          const ox=mc.nameX||0,oy=mc.nameY||0;
+          const sx=e.clientX,sy=e.clientY;
+          const mm=mv=>{
+            onFieldMove('nameX',ox+Math.round((mv.clientX-sx)/dragScale));
+            onFieldMove('nameY',oy+Math.round((mv.clientY-sy)/dragScale));
+          };
+          const mu=()=>{window.removeEventListener('pointermove',mm);window.removeEventListener('pointerup',mu);};
+          window.addEventListener('pointermove',mm);
+          window.addEventListener('pointerup',mu);
+        }:undefined}
+        style={{
+          position:'absolute',
+          top:nameRowTop*scale+gTY+(mc.nameY||0)*scale,
+          left:0,right:0,
+          zIndex:4,textTransform:'uppercase',
+          overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',
+          padding:`0 ${5*scale}px`,
+          textAlign:'center',
+          fontSize:nameFontSizeVal*scale,
+          fontFamily:nameFont,fontWeight:900,color:nameColor,
+          marginLeft:(mc.nameX||0)*scale+gTX,
+          cursor:onFieldMove?'grab':'default',
+          userSelect:'none',
+        }}>
         {s.NAME||'TEACHER NAME'}
       </div>
 
       {/* Fields — absolute Y position, independent of photo */}
-      <div style={{
-        position:'absolute',
-        top:fieldsTopBase*scale+gTY,
-        left:fieldsOffX+gTX,
-        right:0,
-        padding:`0 ${5*scale}px`,
-        zIndex:4,
-        textAlign:fieldsAlign,
-        overflow:'visible',
-      }}>
+      <div
+        onPointerDown={onFieldMove?(e)=>{
+          e.stopPropagation();e.preventDefault();
+          const ox=mc.fieldsX||0,oy=mc.fieldsY!==undefined?mc.fieldsY:200;
+          const sx=e.clientX,sy=e.clientY;
+          const mm=mv=>{
+            onFieldMove('fieldsX',ox+Math.round((mv.clientX-sx)/dragScale));
+            onFieldMove('fieldsY',oy+Math.round((mv.clientY-sy)/dragScale));
+          };
+          const mu=()=>{window.removeEventListener('pointermove',mm);window.removeEventListener('pointerup',mu);};
+          window.addEventListener('pointermove',mm);
+          window.addEventListener('pointerup',mu);
+        }:undefined}
+        style={{
+          position:'absolute',
+          top:fieldsTopBase*scale+gTY,
+          left:fieldsOffX+gTX,
+          right:0,
+          padding:`0 ${5*scale}px`,
+          zIndex:4,
+          textAlign:fieldsAlign,
+          overflow:'visible',
+          cursor:onFieldMove?'grab':'default',
+          userSelect:'none',
+        }}>
+
         {FIELD_DEFS.map(fd=>{
           if(mc[fd.showRowKey]===false)return null;
           const lblCol=mc[fd.labelColorKey]||globalLabelColor;
@@ -2052,7 +2083,7 @@ function App(){
                         <div className={`card-click-wrap${isAdj?' adj-active':''}`} onClick={e=>{e.stopPropagation();openCardAdj(t,e);}}>
                           {Object.keys(over).length>0&&<div className="card-override-dot"/>}
                           <div style={{transform:`scale(${dsnZoom})`,transformOrigin:'top left',width:CARD_W,height:CARD_H,display:'block'}}>
-                            <IDCard s={t} cfg={stableCfg} cfgOverride={over} scale={1} templateImage={activeTemplateImage}/>
+                            <IDCard s={t} cfg={stableCfg} cfgOverride={over} scale={1} templateImage={activeTemplateImage} onFieldMove={(k,v)=>set(k,v)} dragScale={dsnZoom}/>
                           </div>
                           <div style={{width:CARD_W*dsnZoom,height:CARD_H*dsnZoom,marginTop:-(CARD_H*(1-dsnZoom)),display:'block',pointerEvents:'none'}}/>
                           <div className="card-select-hint">{isAdj?'✓ Adjusting':'⚙ Adjust'}</div>
