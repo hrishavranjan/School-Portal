@@ -585,7 +585,7 @@ const BASE_CFG={
   signatureX:0,signatureY:0,signatureHeight:20,signatureWidth:50,signatureImgX:0,signatureImgY:0,
   signatureTxtX:0,signatureTxtY:0,signatureTxtSize:5.5,signatureTxtHeight:14,
   printMode:'color',
-  cfWorkerUrl:'https://s_id.coex.workers.dev',
+  cfWorkerUrl:'https://s-id.coex.workers.dev',
 };
 
 const QRCodeEl=memo(function QRCodeEl({verifyUrl,size=80,scale=1,bgWhite=true,show=true,showCodeText=false,studentCode=''}){
@@ -1479,7 +1479,7 @@ useEffect(()=>{
       const{jsPDF}=window.jspdf;const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
       const pw=doc.internal.pageSize.getWidth(),ph=doc.internal.pageSize.getHeight();
       for(let i=0;i<pages.length;i++){const cv=await html2canvas(pages[i],{scale:2,useCORS:true,allowTaint:false,backgroundColor:'#ffffff'});const img=cv.toDataURL('image/jpeg',.93);if(i>0)doc.addPage();doc.addImage(img,'JPEG',0,0,pw,ph);}
-      doc.save(`${currentSchool?.name||'school'}-${activeSession}-id-cards.pdf`);
+      doc.save(`${currentSchool?.name||'school'}-${activeSession}-studentid-cards.pdf`);
       showToast('PDF exported!','s');
     }catch(e){showToast('PDF failed: '+e.message,'e');}
   }

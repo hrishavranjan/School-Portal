@@ -15,7 +15,7 @@
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script>
-window.CLOUDINARY_CONFIG = { cloudName:'dbqqvmkss', uploadPreset:'Teacher-ID-Card', folder:'school-id-cards/students' };
+window.CLOUDINARY_CONFIG = { cloudName:'dbqqvmkss', uploadPreset:'Teacher-ID-Card', folder:'school-id-cards/teachers' };
 </script>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -514,7 +514,7 @@ sessionLabelColor:'',sessionValueColor:'',sessionEmoji:'📅',
   stampX:0,stampY:0,stampSize:55,stampOpacity:0.18,showStamp:true,logoSize:22,
   signatureX:0,signatureY:0,signatureImgY:0,signatureTxtY:0,signatureHeight:20,signatureWidth:50,
   signatureTxtSize:5.5,signatureTxtHeight:14,
-  printMode:'color',cfWorkerUrl:'https://coext.coex.workers.dev',
+  printMode:'color',cfWorkerUrl:'https://t-id.coex.workers.dev',
 };
 
 /* ✅ FIX: QRCodeEl — copied from working student card version.
