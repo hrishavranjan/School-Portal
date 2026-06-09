@@ -64,14 +64,14 @@ window.CLOUDINARY_CONFIG = { cloudName:'dbqqvmkss', uploadPreset:'Teacher-ID-Car
             const b = writeBatch(db);
             teachers.slice(i, i+BS).forEach(t => {
               const id = (t.EMPLOYEE_ID||t.NAME||Math.random().toString(36).slice(2)).replace(/[^\w]/g,'_');
-              b.set(doc(db, cp, id), { NAME:t.NAME||'', EMPLOYEE_ID:t.EMPLOYEE_ID||'', DESIGNATION:t.DESIGNATION||'', DEPARTMENT:t.DEPARTMENT||'', BLOOD_GROUP:t.BLOOD_GROUP||'', DATE_OF_JOINING:t.DATE_OF_JOINING||'', PHONE_NO:t.PHONE_NO||'', EMAIL:t.EMAIL||'', ADDRESS:t.ADDRESS||'', SESSION:session||t.SESSION||'', SCHOOL_ID:schoolId||'', PHOTO:t.PHOTO||'', updatedAt:Date.now() });
+              b.set(doc(db, cp, id), { NAME:t.NAME||'', EMPLOYEE_ID:t.EMPLOYEE_ID||'', DESIGNATION:t.DESIGNATION||'', DEPARTMENT:t.DEPARTMENT||'', BLOOD_GROUP:t.BLOOD_GROUP||'', DATE_OF_JOINING:t.DATE_OF_JOINING||'', PHONE_NO:t.PHONE_NO||'', EMAIL:t.EMAIL||'', ADDRESS:t.ADDRESS||'', SESSION:session||t.SESSION||'', SCHOOL_ID:schoolId||'', PHOTO:t.PHOTO||'', FATHER_NAME:t.FATHER_NAME||'', PERM_ADDRESS:t.PERM_ADDRESS||'', CORR_ADDRESS:t.CORR_ADDRESS||'', updatedAt:Date.now() });
             }); await b.commit();
           }
         };
         window.fbSaveOneTeacher = async (teacher, schoolId, session) => {
           const cp = colPath(schoolId, session);
           const id = (teacher.EMPLOYEE_ID||teacher.NAME||Math.random().toString(36).slice(2)).replace(/[^\w]/g,'_');
-          await setDoc(doc(db, cp, id), { NAME:teacher.NAME||'', EMPLOYEE_ID:teacher.EMPLOYEE_ID||'', DESIGNATION:teacher.DESIGNATION||'', DEPARTMENT:teacher.DEPARTMENT||'', BLOOD_GROUP:teacher.BLOOD_GROUP||'', DATE_OF_JOINING:teacher.DATE_OF_JOINING||'', PHONE_NO:teacher.PHONE_NO||'', EMAIL:teacher.EMAIL||'', ADDRESS:teacher.ADDRESS||'', SESSION:session||teacher.SESSION||'', SCHOOL_ID:schoolId||'', PHOTO:teacher.PHOTO||'', updatedAt:Date.now() }, { merge:true });
+          await setDoc(doc(db, cp, id), { NAME:teacher.NAME||'', EMPLOYEE_ID:teacher.EMPLOYEE_ID||'', DESIGNATION:teacher.DESIGNATION||'', DEPARTMENT:teacher.DEPARTMENT||'', BLOOD_GROUP:teacher.BLOOD_GROUP||'', DATE_OF_JOINING:teacher.DATE_OF_JOINING||'', PHONE_NO:teacher.PHONE_NO||'', EMAIL:teacher.EMAIL||'', ADDRESS:teacher.ADDRESS||'', SESSION:session||teacher.SESSION||'', SCHOOL_ID:schoolId||'', PHOTO:teacher.PHOTO||'', FATHER_NAME:teacher.FATHER_NAME||'', PERM_ADDRESS:teacher.PERM_ADDRESS||'', CORR_ADDRESS:teacher.CORR_ADDRESS||'', updatedAt:Date.now() }, { merge:true });
         };
         window.fbSaveOneStudent = window.fbSaveOneTeacher;
         window.fbLoad = async (schoolId, session) => { const cp = colPath(schoolId, session); const snap = await getDocs(collection(db, cp)); return snap.docs.map(d => d.data()); };
@@ -332,7 +332,7 @@ input:checked+.tog-sl:before{transform:translateX(15px)}
 .line-ctrl-box{background:#f0fdfa;border:1px solid #99f6e4;border-radius:6px;padding:8px;margin-bottom:8px}
 .line-ctrl-box-title{font-size:9px;font-weight:800;color:#0f3d36;text-transform:uppercase;letter-spacing:.3px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between}
 @media print{
-  @page{size:A4 portrait;margin:6mm}
+  @page{size:A4 portrait;margin:4mm}
   *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
   .app-hdr,.sidebar,.context-bar,.no-print,.toast-wrap,.verify-overlay,.edit-popup,.card-adj-sidebar,.preview-zone,.screen-only,#pdf-src,#app-loading,.setup-overlay{display:none!important}
   html,body{height:auto!important;overflow:visible!important;background:#fff!important}
@@ -340,9 +340,9 @@ input:checked+.tog-sl:before{transform:translateX(15px)}
   .app-body,.main,.content{display:block!important;height:auto!important;overflow:visible!important}
   .print-only{display:block!important}
   #print-target{display:block!important}
-  .preview-page{display:flex!important;flex-wrap:wrap!important;gap:4px!important;align-content:flex-start!important;justify-content:flex-start!important;width:100%!important;min-height:0!important;height:auto!important;padding:4px!important;margin:0!important;background:#fff!important;box-shadow:none!important;border-radius:0!important;page-break-after:always;break-after:page}
+  .preview-page{display:flex!important;flex-wrap:wrap!important;gap:2px!important;align-content:flex-start!important;justify-content:flex-start!important;width:100%!important;min-height:0!important;height:auto!important;padding:2px!important;margin:0!important;background:#fff!important;box-shadow:none!important;border-radius:0!important;page-break-after:always;break-after:page}
   .preview-page:last-child{page-break-after:avoid;break-after:avoid}
-  .preview-cell{margin:2px 3px!important;display:flex!important}
+  .preview-cell{margin:1px 2px!important;display:flex!important;flex-direction:column!important;gap:2px!important}
   .card-select-hint,.card-override-dot{display:none!important}
   .app>div:last-child{display:none!important}
 }
@@ -422,23 +422,40 @@ function normKey(k){
     EMAIL:'EMAIL',EMAILID:'EMAIL',MAIL:'EMAIL',
     ADDRESS:'ADDRESS',ADDR:'ADDRESS',
     PHOTO:'PHOTO',IMAGE:'PHOTO',IMG:'PHOTO',
-    SESSION:'SESSION',SES:'SESSION',SESS:'SESSION',YEAR:'SESSION'
+    SESSION:'SESSION',SES:'SESSION',SESS:'SESSION',YEAR:'SESSION',
+    FATHERNAME:'FATHER_NAME',FATHER:'FATHER_NAME',FATHERSNAME:'FATHER_NAME',
+    PERMANENTADDRESS:'PERM_ADDRESS',PERMADDRESS:'PERM_ADDRESS',PERMADDR:'PERM_ADDRESS',
+    CORRESPONDENCEADDRESS:'CORR_ADDRESS',CORRADDRESS:'CORR_ADDRESS',CORRADDR:'CORR_ADDRESS',CORRESPONDENCEADDR:'CORR_ADDRESS'
   };
   return m[u]||u;
 }
 function mapRow(row){
   const norm={};
   Object.keys(row).forEach(k=>{norm[normKey(k)]=String(row[k]??'').trim();});
-  const fields=['NAME','EMPLOYEE_ID','DESIGNATION','DEPARTMENT','BLOOD_GROUP','DATE_OF_JOINING','PHONE_NO','EMAIL','ADDRESS','SESSION','PHOTO'];
+  const fields=['NAME','EMPLOYEE_ID','DESIGNATION','DEPARTMENT','BLOOD_GROUP','DATE_OF_JOINING','PHONE_NO','EMAIL','ADDRESS','SESSION','PHOTO','FATHER_NAME','PERM_ADDRESS','CORR_ADDRESS'];
   const out={};fields.forEach(f=>{out[f]=norm[f]||'';});
   return out;
 }
 
 const SAMPLES=[
-  {NAME:'DR. RAJESH KUMAR',EMPLOYEE_ID:'UMSW-TCH-001',DESIGNATION:'HEAD MASTER',DEPARTMENT:'ADMINISTRATION',BLOOD_GROUP:'B+',DATE_OF_JOINING:'01-04-2010',PHONE_NO:'9123456789',EMAIL:'rajesh@ums.edu.in',ADDRESS:'BISFI, MADHUBANI, BIHAR - 847222',SESSION:'2024-25',PHOTO:'',_ok:true,_issues:[]},
-  {NAME:'SUNITA DEVI',EMPLOYEE_ID:'UMSW-TCH-002',DESIGNATION:'SENIOR TEACHER',DEPARTMENT:'SCIENCE',BLOOD_GROUP:'O+',DATE_OF_JOINING:'15-06-2015',PHONE_NO:'9876543210',EMAIL:'sunita@ums.edu.in',ADDRESS:'BISFI, MADHUBANI, BIHAR',SESSION:'2024-25',PHOTO:'',_ok:true,_issues:[]},
-  {NAME:'MOHAN LAL SHARMA',EMPLOYEE_ID:'UMSW-TCH-003',DESIGNATION:'TEACHER',DEPARTMENT:'MATHEMATICS',BLOOD_GROUP:'A+',DATE_OF_JOINING:'01-07-2018',PHONE_NO:'9988776655',EMAIL:'mohan@ums.edu.in',ADDRESS:'BISFI, MADHUBANI, BIHAR',SESSION:'2024-25',PHOTO:'',_ok:true,_issues:[]},
+  {NAME:'DR. RAJESH KUMAR',EMPLOYEE_ID:'UMSW-TCH-001',FATHER_NAME:'SH. RAMESH KUMAR',PERM_ADDRESS:'BISFI, MADHUBANI, BIHAR - 847222',CORR_ADDRESS:'BISFI, MADHUBANI, BIHAR - 847222',DESIGNATION:'HEAD MASTER',DEPARTMENT:'ADMINISTRATION',BLOOD_GROUP:'B+',DATE_OF_JOINING:'01-04-2010',PHONE_NO:'9123456789',EMAIL:'rajesh@ums.edu.in',ADDRESS:'BISFI, MADHUBANI, BIHAR - 847222',SESSION:'2024-25',PHOTO:'',_ok:true,_issues:[]},
+  {NAME:'SUNITA DEVI',EMPLOYEE_ID:'UMSW-TCH-002',FATHER_NAME:'SH. MOHAN LAL',PERM_ADDRESS:'BISFI, MADHUBANI, BIHAR',CORR_ADDRESS:'BISFI, MADHUBANI, BIHAR',DESIGNATION:'SENIOR TEACHER',DEPARTMENT:'SCIENCE',BLOOD_GROUP:'O+',DATE_OF_JOINING:'15-06-2015',PHONE_NO:'9876543210',EMAIL:'sunita@ums.edu.in',ADDRESS:'BISFI, MADHUBANI, BIHAR',SESSION:'2024-25',PHOTO:'',_ok:true,_issues:[]},
+  {NAME:'MOHAN LAL SHARMA',EMPLOYEE_ID:'UMSW-TCH-003',FATHER_NAME:'SH. SHYAM LAL SHARMA',PERM_ADDRESS:'BISFI, MADHUBANI, BIHAR',CORR_ADDRESS:'BISFI, MADHUBANI, BIHAR',DESIGNATION:'TEACHER',DEPARTMENT:'MATHEMATICS',BLOOD_GROUP:'A+',DATE_OF_JOINING:'01-07-2018',PHONE_NO:'9988776655',EMAIL:'mohan@ums.edu.in',ADDRESS:'BISFI, MADHUBANI, BIHAR',SESSION:'2024-25',PHOTO:'',_ok:true,_issues:[]},
+  {NAME:'PRIYA KUMARI',EMPLOYEE_ID:'UMSW-TCH-004',FATHER_NAME:'SH. VIJAY KUMAR',PERM_ADDRESS:'BISFI, MADHUBANI, BIHAR - 847222',CORR_ADDRESS:'BISFI, MADHUBANI, BIHAR - 847222',DESIGNATION:'ASSISTANT TEACHER',DEPARTMENT:'HINDI',BLOOD_GROUP:'AB+',DATE_OF_JOINING:'10-08-2019',PHONE_NO:'9012345678',EMAIL:'priya@ums.edu.in',ADDRESS:'BISFI, MADHUBANI, BIHAR - 847222',SESSION:'2024-25',PHOTO:'',_ok:true,_issues:[]},
+  {NAME:'AMIT KUMAR JHA',EMPLOYEE_ID:'UMSW-TCH-005',FATHER_NAME:'SH. SURESH JHA',PERM_ADDRESS:'BISFI, MADHUBANI, BIHAR - 847222',CORR_ADDRESS:'BISFI, MADHUBANI, BIHAR - 847222',DESIGNATION:'TEACHER',DEPARTMENT:'ENGLISH',BLOOD_GROUP:'O-',DATE_OF_JOINING:'05-01-2020',PHONE_NO:'9654321087',EMAIL:'amit@ums.edu.in',ADDRESS:'BISFI, MADHUBANI, BIHAR - 847222',SESSION:'2024-25',PHOTO:'',_ok:true,_issues:[]},
 ];
+
+const BACK_FIELD_DEFS=[
+  {key:'fathername',label:"Father's Name",emoji:'👨',xk:'fatherX',yk:'fatherY',sk:'fatherFontSize',spk:'fatherSpacing',ek:'fatherEmoji',esk:'fatherEmojiSize',exk:'fatherEmojiX',eyk:'fatherEmojiY',fk:'fatherFont',showEk:'showFatherEmoji',showLabelKey:'showFatherLabel',showValueKey:'showFatherValue',showRowKey:'showFatherRow',labelColorKey:'fatherLabelColor',valueColorKey:'fatherValueColor',lx:'fatherLabelX',ly:'fatherLabelY',vx:'fatherValX',vy:'fatherValY'},
+  {key:'permaddress',label:'Permanent Address',emoji:'🏠',xk:'permAddrX',yk:'permAddrY',sk:'permAddrFontSize',spk:'permAddrSpacing',ek:'permAddrEmoji',esk:'permAddrEmojiSize',exk:'permAddrEmojiX',eyk:'permAddrEmojiY',fk:'permAddrFont',showEk:'showPermAddrEmoji',showLabelKey:'showPermAddrLabel',showValueKey:'showPermAddrValue',showRowKey:'showPermAddrRow',labelColorKey:'permAddrLabelColor',valueColorKey:'permAddrValueColor',lx:'permAddrLabelX',ly:'permAddrLabelY',vx:'permAddrValX',vy:'permAddrValY'},
+  {key:'corraddress',label:'Correspondence Address',emoji:'📮',xk:'corrAddrX',yk:'corrAddrY',sk:'corrAddrFontSize',spk:'corrAddrSpacing',ek:'corrAddrEmoji',esk:'corrAddrEmojiSize',exk:'corrAddrEmojiX',eyk:'corrAddrEmojiY',fk:'corrAddrFont',showEk:'showCorrAddrEmoji',showLabelKey:'showCorrAddrLabel',showValueKey:'showCorrAddrValue',showRowKey:'showCorrAddrRow',labelColorKey:'corrAddrLabelColor',valueColorKey:'corrAddrValueColor',lx:'corrAddrLabelX',ly:'corrAddrLabelY',vx:'corrAddrValX',vy:'corrAddrValY'},
+];
+
+function getBackFieldValue(s,key){
+  const map={fathername:'FATHER_NAME',permaddress:'PERM_ADDRESS',corraddress:'CORR_ADDRESS'};
+  return s[map[key]]||'';
+}
+
 
 const FIELD_DEFS=[
   {key:'empid',label:'Employee ID',emoji:'🆔',lx:'empidLabelX',ly:'empidLabelY',vx:'empidValX',vy:'empidValY',xk:'empidX',yk:'empidY',sk:'empidFontSize',spk:'empidSpacing',ek:'empidEmoji',esk:'empidEmojiSize',exk:'empidEmojiX',eyk:'empidEmojiY',fk:'empidFont',showEk:'showEmpidEmoji',showLabelKey:'showEmpidLabel',showValueKey:'showEmpidValue',showRowKey:'showEmpidRow',labelColorKey:'empidLabelColor',valueColorKey:'empidValueColor'},
@@ -456,8 +473,9 @@ function getFieldValue(s,key){
   const map={empid:'EMPLOYEE_ID',designation:'DESIGNATION',department:'DEPARTMENT',blood:'BLOOD_GROUP',doj:'DATE_OF_JOINING',phone:'PHONE_NO',email:'EMAIL',address:'ADDRESS',session:'SESSION'};
   return s[map[key]]||'';
 }
-
 const BASE_CFG={
+  govtLine:'GOVT. OF BIHAR',govtLineX:0,govtLineY:0,govtLineSize:8,govtLineColor:'',showGovtLine:true,
+  educationLine:'EDUCATION DEPARTMENT',educationLineX:0,educationLineY:0,educationLineSize:7,educationLineColor:'',showEducationLine:true,
   schoolLine1:'',schoolLine2:'',schoolLine3:'',schoolLine4:'',
   showEstd:true,estdColor:'',
   schoolColor:'#ffffff',schoolFontSize:10,schoolFont:"'Barlow Condensed',sans-serif",schoolAlign:'center',
@@ -504,17 +522,44 @@ sessionLabelColor:'',sessionValueColor:'',sessionEmoji:'📅',
   sessionLabelX:0,sessionLabelY:0,sessionValX:0,sessionValY:0,
   addressLabelX:0,addressLabelY:0,addressValX:0,addressValY:0,
   /* ✅ FIX: qrSize 64 so QRCode.js renders correctly */
-  showBarcode:true,qrSize:64,qrX:0,qrY:0,qrPosition:'bottom-right',qrBgWhite:true,showQrCodeText:false,useShortQrUrl:false,
+  showBarcode:true,qrSize:64,qrX:0,qrY:0,qrPosition:'bottom-right',qrBgWhite:true,showQrCodeText:false,useShortQrUrl:false,showScanToVerify:true,
   fieldsAlign:'left',showPhoto:true,
   photoX:0,photoY:38,photoZoom:1,photoBorderRadius:8,photoOffsetX:0,photoOffsetY:0,photoWidth:65,photoHeight:78,
   photoPaddingTop:0,photoPaddingBottom:0,photoPaddingLeft:0,photoPaddingRight:0,
   photoBorderColor:'#0d1f6b',photoBorderWidth:2,
-  logo:null,watermark:null,signature:null,stamp:null,
+  logo:null,logo2:null,logo2Size:22,logo2X:0,logo2Y:0,showLogo2:false,logo2Position:'right',watermark:null,watermark2:null,wm2Opacity:0.12,wm2Size:90,wm2X:0,wm2Y:0,showWM2:false,signature:null,stamp:null,
   wmOpacity:0.12,wmSize:90,showWM:true,wmX:0,wmY:0,
   stampX:0,stampY:0,stampSize:55,stampOpacity:0.18,showStamp:true,logoSize:22,
   signatureX:0,signatureY:0,signatureImgY:0,signatureTxtY:0,signatureHeight:20,signatureWidth:50,
   signatureTxtSize:5.5,signatureTxtHeight:14,
-  printMode:'color',cfWorkerUrl:'https://t-id.coex.workers.dev',
+ printMode:'color',cfWorkerUrl:'https://t-id.coex.workers.dev',
+  /* Back side fields */
+  showFatherRow:true,showFatherEmoji:true,showFatherLabel:true,showFatherValue:true,
+  fatherLabelColor:'',fatherValueColor:'',fatherEmoji:'👨',
+  fatherX:0,fatherY:160,fatherFontSize:10,fatherSpacing:0,fatherEmojiSize:10,fatherEmojiX:0,fatherEmojiY:0,fatherFont:'',
+  fatherLabelX:0,fatherLabelY:0,fatherValX:0,fatherValY:0,
+  showPermAddrRow:true,showPermAddrEmoji:true,showPermAddrLabel:true,showPermAddrValue:true,
+  permAddrLabelColor:'',permAddrValueColor:'',permAddrEmoji:'🏠',
+  permAddrX:0,permAddrY:185,permAddrFontSize:10,permAddrSpacing:0,permAddrEmojiSize:10,permAddrEmojiX:0,permAddrEmojiY:0,permAddrFont:'',
+  permAddrLabelX:0,permAddrLabelY:0,permAddrValX:0,permAddrValY:0,
+  showCorrAddrRow:true,showCorrAddrEmoji:true,showCorrAddrLabel:true,showCorrAddrValue:true,
+  corrAddrLabelColor:'',corrAddrValueColor:'',corrAddrEmoji:'📮',
+  corrAddrX:0,corrAddrY:215,corrAddrFontSize:10,corrAddrSpacing:0,corrAddrEmojiSize:10,corrAddrEmojiX:0,corrAddrEmojiY:0,corrAddrFont:'',
+  corrAddrLabelX:0,corrAddrLabelY:0,corrAddrValX:0,corrAddrValY:0,
+  /* Back side layout */
+  backFieldsX:0,backFieldsY:40,backLogoSize:30,backLogoX:0,backLogoY:6,
+  showBackLogo:true,showBackWM:true,backWmOpacity:0.12,backWmSize:90,backWmX:0,backWmY:0,
+  backSchoolOverlayX:0,backSchoolOverlayY:0,showBackSchoolOverlay:false,
+  showBackName:false,
+  backLine1Size:10,backLine1X:0,backLine1Y:0,backLine1Color:'',
+  backLine2Size:7,backLine2X:0,backLine2Y:0,backLine2Color:'',
+  backLine3Size:6,backLine3X:0,backLine3Y:0,backLine3Color:'',
+  backLine4Size:6,backLine4X:0,backLine4Y:0,backLine4Color:'',
+  backNameColor:'#0d1f6b',backNameFontSize:11,backNameX:0,backNameY:120,
+  backFieldLabelColor:'#0d1f6b',backFieldValueColor:'#111827',
+  backFieldFont:"'Barlow Condensed',sans-serif",backGlobalFieldFontSize:10,
+  backLogo:null,backLogoSeparate:false,
+  backWatermark:null,backWmSeparate:false,
 };
 
 /* ✅ FIX: QRCodeEl — copied from working student card version.
@@ -793,7 +838,7 @@ const IDCard=memo(function IDCard({s,cfg,cfgOverride={},scale=1,templateImage=nu
   const baseSchoolFontSize=mc.schoolFontSize||10;
 
   return(
-    <div style={{width:W,height:H,borderRadius:8*scale,overflow:'hidden',position:'relative',fontFamily:globalFieldFont,boxShadow:`0 ${3*scale}px ${16*scale}px rgba(0,0,0,.22)`,flexShrink:0}}>
+    <div style={{width:W,height:H,borderRadius:8*scale,overflow:'hidden',position:'relative',fontFamily:globalFieldFont,boxShadow:`0 ${1*scale}px ${4*scale}px rgba(0,0,0,.15)`,flexShrink:0}}>
 
       {/* Template background */}
       <img src={templateImage} style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',zIndex:0}} alt="template" crossOrigin="anonymous"/>
@@ -802,6 +847,13 @@ const IDCard=memo(function IDCard({s,cfg,cfgOverride={},scale=1,templateImage=nu
       {mc.showWM&&mc.watermark&&(
         <div style={{position:'absolute',top:'50%',left:'50%',transform:`translate(calc(-50% + ${(mc.wmX||0)*scale}px),calc(-50% + ${(mc.wmY||0)*scale}px))`,zIndex:1,pointerEvents:'none',opacity:mc.wmOpacity||.12,width:(mc.wmSize||90)*scale,height:(mc.wmSize||90)*scale}}>
           <img src={mc.watermark} style={{width:'100%',height:'100%',objectFit:'contain'}} alt="" crossOrigin="anonymous"/>
+        </div>
+      )}
+
+      {/* Watermark 2 */}
+      {mc.showWM2&&mc.watermark2&&(
+        <div style={{position:'absolute',top:'50%',left:'50%',transform:`translate(calc(-50% + ${(mc.wm2X||0)*scale}px),calc(-50% + ${(mc.wm2Y||0)*scale}px))`,zIndex:1,pointerEvents:'none',opacity:mc.wm2Opacity||.12,width:(mc.wm2Size||90)*scale,height:(mc.wm2Size||90)*scale}}>
+          <img src={mc.watermark2} style={{width:'100%',height:'100%',objectFit:'contain'}} alt="" crossOrigin="anonymous"/>
         </div>
       )}
 
@@ -815,11 +867,24 @@ const IDCard=memo(function IDCard({s,cfg,cfgOverride={},scale=1,templateImage=nu
       {/* School header overlay */}
       {mc.showSchoolOverlay!==false&&(
         <div style={{position:'absolute',top:(6+(mc.schoolOverlayY||0))*scale,left:0,right:0,zIndex:5,textAlign:schoolAlign,padding:`0 ${7*scale}px`,marginLeft:(mc.schoolOverlayX||0)*scale}}>
-          {mc.logo&&(
-            <div style={{display:'flex',justifyContent:schoolAlign==='center'?'center':schoolAlign==='right'?'flex-end':'flex-start',marginBottom:2*scale}}>
-              <img src={mc.logo} style={{width:(mc.logoSize||22)*scale,height:(mc.logoSize||22)*scale,objectFit:'contain',borderRadius:'50%',border:`${1*scale}px solid rgba(255,255,255,.4)`}} alt="logo" crossOrigin="anonymous"/>
+          {(mc.logo||mc.showLogo2)&&(
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:2*scale,padding:`0 ${2*scale}px`}}>
+              <div style={{display:'flex',alignItems:'center'}}>
+                {mc.logo&&<img src={mc.logo} style={{width:(mc.logoSize||22)*scale,height:(mc.logoSize||22)*scale,objectFit:'contain',borderRadius:'50%',border:`${1*scale}px solid rgba(255,255,255,.4)`,position:'relative',left:(mc.logo1X||0)*scale,top:(mc.logo1Y||0)*scale}} alt="logo1" crossOrigin="anonymous"/>}
+              </div>
+              <div style={{display:'flex',alignItems:'center'}}>
+                {mc.showLogo2&&mc.logo2&&<img src={mc.logo2} style={{width:(mc.logo2Size||22)*scale,height:(mc.logo2Size||22)*scale,objectFit:'contain',borderRadius:'50%',border:`${1*scale}px solid rgba(255,255,255,.4)`,position:'relative',left:(mc.logo2X||0)*scale,top:(mc.logo2Y||0)*scale}} alt="logo2" crossOrigin="anonymous"/>}
+              </div>
             </div>
           )}
+
+          {mc.showGovtLine!==false&&mc.govtLine&&(
+            <div style={{color:mc.govtLineColor||line1Color,fontSize:(mc.govtLineSize||8)*scale,fontWeight:800,textTransform:'uppercase',letterSpacing:.5,lineHeight:1.15,fontFamily:schoolFont,position:'relative',left:(mc.govtLineX||0)*scale,top:(mc.govtLineY||0)*scale,marginBottom:1*scale}}>{mc.govtLine}</div>
+          )}
+          {mc.showEducationLine!==false&&mc.educationLine&&(
+            <div style={{color:mc.educationLineColor||line2Color,fontSize:(mc.educationLineSize||7)*scale,fontWeight:700,lineHeight:1.3,fontFamily:schoolFont,position:'relative',left:(mc.educationLineX||0)*scale,top:(mc.educationLineY||0)*scale,marginBottom:1*scale}}>{mc.educationLine}</div>
+          )}
+
           {mc.schoolLine1&&(
             <div style={{color:line1Color,fontSize:(mc.line1Size||baseSchoolFontSize)*scale,fontWeight:900,textTransform:'uppercase',letterSpacing:.5,lineHeight:1.15,fontFamily:schoolFont,position:'relative',left:(mc.line1X||0)*scale,top:(mc.line1Y||0)*scale,marginBottom:1*scale}}>{mc.schoolLine1}</div>
           )}
@@ -934,13 +999,13 @@ const IDCard=memo(function IDCard({s,cfg,cfgOverride={},scale=1,templateImage=nu
       {/* Signature */}
       {mc.signature&&(
         <div style={{position:'absolute',bottom:(mc.showBarcode!==false?42:8)*scale,right:6*scale,textAlign:'center',zIndex:5}}>
-          <img src={mc.signature} style={{maxHeight:(mc.signatureHeight||20)*scale,maxWidth:(mc.signatureWidth||50)*scale,objectFit:'contain',display:'block',marginBottom:1*scale,position:'relative',left:(mc.signatureX||0)*scale,top:-(mc.signatureImgY||0)*scale}} alt="sig" crossOrigin="anonymous"/>
-          <div style={{fontSize:(mc.signatureTxtSize||5.5)*scale,fontWeight:700,color:mc.signatureLabelColor||globalFieldColor,letterSpacing:.5,textTransform:'uppercase',fontFamily:"'Barlow Condensed',sans-serif",lineHeight:1,position:'relative',left:(mc.signatureX||0)*scale,top:-(mc.signatureTxtY||0)*scale}}>{mc.signatureLabelText||'Principal'}</div>
+          <img src={mc.signature} style={{maxHeight:(mc.signatureHeight||20)*scale,maxWidth:(mc.signatureWidth||50)*scale,objectFit:'contain',display:'block',marginBottom:1*scale,position:'relative',left:(mc.signatureImgX||mc.signatureX||0)*scale,top:-(mc.signatureImgY||0)*scale}} alt="sig" crossOrigin="anonymous"/>
+          <div style={{fontSize:(mc.signatureTxtSize||5.5)*scale,fontWeight:700,color:mc.signatureLabelColor||globalFieldColor,letterSpacing:.5,textTransform:'uppercase',fontFamily:"'Barlow Condensed',sans-serif",lineHeight:1,position:'relative',left:(mc.signatureTxtX||mc.signatureX||0)*scale,top:-(mc.signatureTxtY||0)*scale}}>{mc.signatureLabelText||'Principal'}</div>
         </div>
       )}
 
-      {/* ✅ FIX: QR Code — pass raw qrSize (not *scale), use bgWhite prop */}
-      {mc.showBarcode!==false&&verifyUrl&&(
+      {/* QR disabled on front — back only */}
+      {false&&mc.showBarcode!==false&&verifyUrl&&(
         <div style={qrStyle}>
           <QRCodeEl
             verifyUrl={verifyUrl}
@@ -956,6 +1021,121 @@ const IDCard=memo(function IDCard({s,cfg,cfgOverride={},scale=1,templateImage=nu
     </div>
   );
 });
+
+/* ── Back Side ID Card ── */
+const IDCardBack=memo(function IDCardBack({s,cfg,cfgOverride={},scale=1,templateImage=null}){
+  if(!templateImage){
+    return(
+      <div className="no-tpl-card" style={{width:CARD_W*scale,height:CARD_H*scale}}>
+        <div className="ntc-icon">🔄</div>
+        <div className="ntc-txt">No Back Template</div>
+        <div style={{fontSize:'8px',color:'var(--tx2)',textAlign:'center',padding:'0 14px'}}>Upload a back-side template in sidebar → Back Tpl tab.</div>
+      </div>
+    );
+  }
+  const mc={...cfg,...cfgOverride};
+  const cfUrl=(mc.cfWorkerUrl||'').replace(/\/$/,'');
+  const empId=s.EMPLOYEE_ID||'';
+  const verifyUrl=empId
+    ?(mc.useShortQrUrl?UMSShort.shortUrl(cfUrl,empId):(cfUrl?`${cfUrl}/verify?code=${encodeURIComponent(empId)}`:empId))
+    :'';
+  const W=CARD_W*scale,H=CARD_H*scale;
+  const schoolFont=mc.schoolFont||"'Barlow Condensed',sans-serif";
+  const schoolAlign=mc.schoolAlign||'center';
+  const schoolColor=mc.schoolColor||'#ffffff';
+  const globalFieldFont=mc.backFieldFont||mc.fieldFont||"'Barlow Condensed',sans-serif";
+  const globalLabelColor=mc.backFieldLabelColor||mc.labelColor||'#0d1f6b';
+  const globalFieldColor=mc.backFieldValueColor||mc.fieldColor||'#111827';
+  const gFontSize=mc.backGlobalFieldFontSize||mc.globalFieldFontSize||10;
+  const ff=k=>mc[k]||gFontSize;
+  const fFont=fk=>mc[fk]||globalFieldFont;
+  const nameRowTop=(mc.backNameY!==undefined?mc.backNameY:120);
+  const fieldsTopBase=(mc.backFieldsY!==undefined?mc.backFieldsY:140);
+  const fieldsOffX=(mc.backFieldsX||0)*scale;
+  const line1Color=mc.backLine1Color||schoolColor;
+  const line2Color=mc.backLine2Color||schoolColor;
+  const line3Color=mc.backLine3Color||schoolColor;
+  const line4Color=mc.backLine4Color||mc.estdColor||schoolColor;
+  const effectiveBackLogo=mc.backLogoSeparate?mc.backLogo:mc.logo;
+  const effectiveBackWM=mc.backWmSeparate?mc.backWatermark:(mc.showBackWM!==false?mc.watermark:null);
+  const qrSize=Math.max(64,mc.qrSize||64);
+  const qrPos=mc.qrPosition||'bottom-right';
+  const qrStyle={position:'absolute',zIndex:6};
+  if(qrPos==='bottom-right'){qrStyle.right=(3+(-(mc.qrX||0)))*scale;qrStyle.bottom=(3+(mc.qrY||0))*scale;}
+  else if(qrPos==='bottom-left'){qrStyle.left=(3+(mc.qrX||0))*scale;qrStyle.bottom=(3+(mc.qrY||0))*scale;}
+  else{qrStyle.left='50%';qrStyle.transform=`translateX(calc(-50% + ${(mc.qrX||0)*scale}px))`;qrStyle.bottom=(3+(mc.qrY||0))*scale;}
+  return(
+    <div style={{width:W,height:H,borderRadius:8*scale,overflow:'hidden',position:'relative',fontFamily:globalFieldFont,boxShadow:`0 ${1*scale}px ${4*scale}px rgba(0,0,0,.15)`,flexShrink:0}}>
+      <img src={templateImage} style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',zIndex:0}} alt="back-template" crossOrigin="anonymous"/>
+      {/* Back Watermark */}
+      {mc.showBackWM&&effectiveBackWM&&(
+        <div style={{position:'absolute',top:'50%',left:'50%',transform:`translate(calc(-50% + ${(mc.backWmX||0)*scale}px),calc(-50% + ${(mc.backWmY||0)*scale}px))`,zIndex:1,pointerEvents:'none',opacity:mc.backWmOpacity||.12,width:(mc.backWmSize||90)*scale,height:(mc.backWmSize||90)*scale}}>
+          <img src={effectiveBackWM} style={{width:'100%',height:'100%',objectFit:'contain'}} alt="" crossOrigin="anonymous"/>
+        </div>
+      )}
+      {/* Back Logo only (no school text) */}
+      {mc.showBackLogo!==false&&effectiveBackLogo&&(
+        <div style={{position:'absolute',top:(6+(mc.backLogoY||0))*scale,left:0,right:0,zIndex:5,display:'flex',justifyContent:'center'}}>
+          <img src={effectiveBackLogo} style={{width:(mc.backLogoSize||30)*scale,height:(mc.backLogoSize||30)*scale,objectFit:'contain',borderRadius:'50%',border:`${1*scale}px solid rgba(255,255,255,.4)`,position:'relative',left:(mc.backLogoX||0)*scale}} alt="logo" crossOrigin="anonymous"/>
+        </div>
+      )}
+{/* Custom Line 1 on back */}
+      {mc.showBackCustomLine1!==false&&mc.backCustomLine1Text&&(
+        <div style={{position:'absolute',top:(6+(mc.backCustomLine1Y||20))*scale,left:(mc.backCustomLine1X||0)*scale,right:0,zIndex:5,textAlign:mc.backCustomLine1Align||'left',padding:`0 ${5*scale}px`,fontSize:(mc.backCustomLine1Size||11)*scale,fontFamily:mc.backCustomLine1Font||globalFieldFont,fontWeight:800,color:mc.backCustomLine1Color||'#0d1f6b',letterSpacing:0.5}}>
+          {mc.backCustomLine1Text}
+        </div>
+      )}
+      
+
+      {/* Teacher Name on back — optional */}
+      {mc.showBackName!==false&&(
+      <div style={{position:'absolute',top:nameRowTop*scale,left:0,right:0,zIndex:4,textTransform:'uppercase',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',padding:`0 ${5*scale}px`,textAlign:'center',fontSize:(mc.backNameFontSize||11)*scale,fontFamily:mc.nameFont||globalFieldFont,fontWeight:900,color:mc.backNameColor||'#0d1f6b',marginLeft:(mc.backNameX||0)*scale}}>
+        {s.NAME||'TEACHER NAME'}
+      </div>
+      )}
+      {/* Back Fields */}
+      <div style={{position:'absolute',top:fieldsTopBase*scale,left:fieldsOffX,right:0,padding:`0 ${5*scale}px`,zIndex:4,overflow:'visible'}}>
+        {BACK_FIELD_DEFS.map(fd=>{
+          if(mc[fd.showRowKey]===false)return null;
+          const lblCol=mc[fd.labelColorKey]||globalLabelColor;
+          const valCol=mc[fd.valueColorKey]||globalFieldColor;
+          return(
+            <FieldRow key={fd.key}
+              emoji={mc[fd.ek]||fd.emoji}
+              showEmoji={mc[fd.showEk]!==false}
+              labelText={fd.label}
+              showLabel={mc[fd.showLabelKey]!==false}
+              value={getBackFieldValue(s,fd.key)}
+              showValue={mc[fd.showValueKey]!==false}
+              scale={scale}
+              labelColor={lblCol}
+              fieldColor={valCol}
+              fieldFont={fFont(fd.fk)||globalFieldFont}
+              lblX={mc[fd.lx]||0} lblY={mc[fd.ly]||0}
+              valX={mc[fd.vx]||0} valY={mc[fd.vy]||0}
+              rowX={mc[fd.xk]||0} rowY={mc[fd.yk]||0}
+              fontSize={ff(fd.sk)}
+              emojiSize={mc[fd.esk]||10}
+              emojiX={mc[fd.exk]||0} emojiY={mc[fd.eyk]||0}
+              letterSpacing={mc[fd.spk]||0}
+              wrap={true}
+            />
+          );
+        })}
+      </div>
+      {/* QR on back */}
+      {mc.showBarcode!==false&&verifyUrl&&(
+        <div style={qrStyle}>
+          <QRCodeEl verifyUrl={verifyUrl} size={qrSize} scale={scale} bgWhite={mc.qrBgWhite!==false} show={true} showCodeText={mc.showQrCodeText===true} empId={empId}/>
+          {mc.showScanToVerify!==false&&(
+            <div style={{textAlign:'center',fontSize:Math.max(5,6*scale)+'px',fontWeight:700,color:'#000',background:'rgba(255,255,255,0.9)',padding:'1px 3px',borderRadius:2,marginTop:1,letterSpacing:0.3,fontFamily:"'Barlow Condensed',sans-serif"}}>SCAN TO VERIFY</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+});
+
 
 /* ── School Manager Modal ── */
 function SchoolManagerModal({schools,onDone,onSave,fbOk,initialMode='select'}){
@@ -1229,13 +1409,52 @@ function VerifyPage({teacher,cfg,templateImage,onClose}){
 }
 
 /* ── Print Page ── */
-function PrintPage({teachers,cfg,cardOverrides,bw,templateImage}){
+function PrintPage({teachers,cfg,cardOverrides,bw,templateImage,backTemplateImage,printSide='both'}){
+  if(printSide==='front'){
+    return(
+      <div className="preview-page" style={{filter:bw?'grayscale(1)':'none',display:'flex',flexWrap:'wrap',gap:10,alignContent:'flex-start',padding:'7mm'}}>
+        {teachers.map((t,i)=>{
+          const key=t.EMPLOYEE_ID||t.NAME||i;
+          const over=(cardOverrides&&cardOverrides[key])||{};
+          return(
+            <div key={i} style={{margin:'3.5mm'}}>
+              <IDCard s={t} cfg={cfg} cfgOverride={over} templateImage={templateImage}/>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+  if(printSide==='back'){
+    return(
+      <div className="preview-page" style={{filter:bw?'grayscale(1)':'none',display:'flex',flexWrap:'wrap',gap:10,alignContent:'flex-start',padding:'7mm'}}>
+        {teachers.map((t,i)=>{
+          const key=t.EMPLOYEE_ID||t.NAME||i;
+          const over=(cardOverrides&&cardOverrides[key])||{};
+          return(
+            <div key={i} style={{margin:'3.5mm'}}>
+              <IDCardBack s={t} cfg={cfg} cfgOverride={over} templateImage={backTemplateImage}/>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
   return(
-    <div className="preview-page" style={{filter:bw?'grayscale(1)':'none'}}>
+    <div className="preview-page" style={{filter:bw?'grayscale(1)':'none',display:'flex',flexWrap:'wrap',gap:10,alignContent:'flex-start',padding:'7mm'}}>
       {teachers.map((t,i)=>{
         const key=t.EMPLOYEE_ID||t.NAME||i;
         const over=(cardOverrides&&cardOverrides[key])||{};
-        return(<div className="preview-cell" key={i} style={{margin:'3px 4px'}}><IDCard s={t} cfg={cfg} cfgOverride={over} templateImage={templateImage}/></div>);
+        return(
+          <React.Fragment key={i}>
+            <div style={{margin:'3.5mm'}}>
+              <IDCard s={t} cfg={cfg} cfgOverride={over} templateImage={templateImage}/>
+            </div>
+            <div style={{margin:'3.5mm'}}>
+              <IDCardBack s={t} cfg={cfg} cfgOverride={over} templateImage={backTemplateImage}/>
+            </div>
+          </React.Fragment>
+        );
       })}
     </div>
   );
@@ -1251,6 +1470,10 @@ function App(){
   const [schoolCfgs,setSchoolCfgs]=useState({});
   const [schoolTemplates,setSchoolTemplates]=useState({});
   const [activeTplIds,setActiveTplIds]=useState({});
+  const [activeBackTplIds,setActiveBackTplIds]=useState({});
+  const [schoolBackTemplates,setSchoolBackTemplates]=useState({});
+  const [backTplUploading,setBackTplUploading]=useState(false);
+  // backCustomLine state is stored in cfg via set('backCustomLine1*', ...)
   const [tplLoading,setTplLoading]=useState(false);
   const [tab,setTab]=useState('upload');
   const [teachers,setTeachers]=useState([]);
@@ -1259,6 +1482,12 @@ function App(){
   const [fdept,setFdept]=useState('');
   const [pg,setPg]=useState(1);
   const [pvPg,setPvPg]=useState(1);
+  const [printFilter,setPrintFilter]=useState('');
+  const [printDesig,setPrintDesig]=useState('');
+  const [printDept,setPrintDept]=useState('');
+  const [selectedForPrint,setSelectedForPrint]=useState(new Set());
+  const [printSelMode,setPrintSelMode]=useState(false);
+  const [printSide,setPrintSide]=useState('both');
   const [dsnZoom,setDsnZoom]=useState(0.68);
   const [zoom,setZoom]=useState(1);
   const [dragOver,setDragOver]=useState(false);
@@ -1283,12 +1512,15 @@ function App(){
   const [pendingCfg,setPendingCfg]=useState({});
 
   const tplFileInputRef=useRef();
+  const backTplFileInputRef=useRef();
   const fileRef=useRef(),logoRef=useRef(),wmRef=useRef(),sigRef=useRef(),stampRef=useRef(),adjPhotoRef=useRef();
+  const backLogoRef=useRef();
+  const backWmRef=useRef();
   const sbBodyRef=useRef();
   const sbScrollRef=useRef(0);
 
   const PER=24;
-  const CARDS_PP={A4:9,A3:18,A2:36,A1:72}[sheetSize]||9;
+  const CARDS_PP=printSide==='both'?{A4:3,A3:6,A2:12,A1:24}[sheetSize]||3:{A4:9,A3:18,A2:36,A1:72}[sheetSize]||9;
   const teacherKey=t=>t.EMPLOYEE_ID||t.NAME||Math.random().toString(36).slice(2);
 
   useEffect(()=>{hideLoader();},[]);
@@ -1332,6 +1564,10 @@ function App(){
   const activeTplId=activeSchool?activeTplIds[activeSchool]||null:null;
   const activeTemplateImage=useMemo(()=>{if(!activeTplId)return null;const t=currentTemplates.find(t=>t.id===activeTplId);return t?t.image:null;},[activeTplId,currentTemplates]);
   const setActiveTplId=id=>{if(!activeSchool)return;setActiveTplIds(prev=>({...prev,[activeSchool]:id}));};
+  const currentBackTemplates=useMemo(()=>activeSchool?schoolBackTemplates[activeSchool]||[]:[],[activeSchool,schoolBackTemplates]);
+  const activeBackTplId=activeSchool?activeBackTplIds[activeSchool]||null:null;
+  const activeBackTemplateImage=useMemo(()=>{if(!activeBackTplId)return null;const t=currentBackTemplates.find(t=>t.id===activeBackTplId);return t?t.image:null;},[activeBackTplId,currentBackTemplates]);
+  const setActiveBackTplId=id=>{if(!activeSchool)return;setActiveBackTplIds(prev=>({...prev,[activeSchool]:id}));};
 
   const saveSchools=useCallback(async(updated)=>{
     setSchools(updated);
@@ -1396,6 +1632,16 @@ function App(){
       }catch(e){console.warn('Template load err',e);}
       setTplLoading(false);
     }
+    if(window.fbLoadTemplates){
+      try{
+        const btpls=await window.fbLoadTemplates(schoolId+'_back');
+        if(btpls&&btpls.length){
+          const mapped=btpls.map(t=>({id:t.id,name:t.name,image:t.image}));
+          setSchoolBackTemplates(prev=>({...prev,[schoolId]:mapped}));
+          setActiveBackTplIds(prev=>({...prev,[schoolId]:prev[schoolId]&&mapped.find(t=>t.id===prev[schoolId])?prev[schoolId]:mapped[0].id}));
+        }
+      }catch(e){console.warn('Back template load err',e);}
+    }
     if(window.fbLoad){try{const d=await window.fbLoad(schoolId,session);setFbCount(d.length);}catch{}}
   },[]);
 
@@ -1406,7 +1652,14 @@ function App(){
     if(sch){
       setSchoolCfgs(prev=>{
         const existing=prev[schoolId]||{};
-        return{...prev,[schoolId]:{...existing,schoolLine1:existing.schoolLine1||sch.name||'',schoolLine2:existing.schoolLine2||sch.line2||'',schoolLine3:existing.schoolLine3||sch.line3||'',schoolLine4:existing.schoolLine4||sch.line4||'',sessionValue:session}};
+        return{...prev,[schoolId]:{...existing,
+          govtLine:existing.govtLine||'GOVT. OF BIHAR',
+          educationLine:existing.educationLine||'EDUCATION DEPARTMENT',
+          schoolLine1:existing.schoolLine1||sch.name||'',
+          schoolLine2:existing.schoolLine2||sch.line2||'',
+          schoolLine3:existing.schoolLine3||sch.line3||'',
+          schoolLine4:existing.schoolLine4||sch.line4||'',
+          sessionValue:session}};
       });
     }
     showToast(`${sch?.name||''} · ${session} ✓`,'s');
@@ -1423,7 +1676,7 @@ function App(){
     try{
       const currentCfg={...schoolCfgs[activeSchool]||{}};
       if(cloudinaryConfigured){
-        const assetKeys=['logo','watermark','signature','stamp'];
+        const assetKeys=['logo','watermark','signature','stamp','backLogo','backWatermark'];
         for(const key of assetKeys){
           const val=currentCfg[key];
           if(val&&typeof val==='string'&&val.startsWith('data:')){
@@ -1432,7 +1685,11 @@ function App(){
           }
         }
       }
-      await window.fbSaveSchoolCfg(activeSchool,currentCfg);
+     await window.fbSaveSchoolCfg(activeSchool,currentCfg);
+      // Also save back templates list state
+      if(window.fbSaveTemplates&&currentBackTemplates.length){
+        try{await window.fbSaveTemplates(currentBackTemplates,activeSchool+'_back');}catch(e){console.warn('Back tpl save err',e);}
+      }
       showToast('✅ Settings saved to Firebase ☁️','s');
     }catch(e){showToast('Save failed: '+e.message,'e');}
     setIsSavingCfg(false);
@@ -1441,6 +1698,10 @@ function App(){
   const tplFileInputEl=(
     <input ref={tplFileInputRef} type="file" accept="image/*" multiple style={{display:'none',position:'fixed',top:-9999,left:-9999}}
       onChange={async e=>{const files=e.target.files;if(!files||!files.length)return;e.target.value='';await uploadTemplateFiles(files);}}/>
+  );
+  const backTplFileInputEl=(
+    <input ref={backTplFileInputRef} type="file" accept="image/*" multiple style={{display:'none',position:'fixed',top:-9999,left:-9999}}
+      onChange={async e=>{const files=e.target.files;if(!files||!files.length)return;e.target.value='';await uploadBackTemplateFiles(files);}}/>
   );
 
   const uploadTemplateFiles=async(files)=>{
@@ -1462,6 +1723,38 @@ function App(){
       }catch(e){showToast('Upload failed: '+e.message,'e');}
     }
     setTplUploading(false);
+  };
+
+  const uploadBackTemplateFiles=async(files)=>{
+    if(!activeSchool){showToast('Select a school first','e');return;}
+    const cfg_cl=window.CLOUDINARY_CONFIG;const hasCloud=cfg_cl.cloudName&&cfg_cl.cloudName!=='YOUR_CLOUD_NAME';
+    setBackTplUploading(true);
+    for(const f of Array.from(files)){
+      if(!f.type.match(/image\//)){showToast('Please upload image files only','e');continue;}
+      try{
+        const dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.onerror=rej;r.readAsDataURL(f);});
+        const name=f.name.replace(/\.[^.]+$/,'').replace(/[-_]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+        const id='btpl_'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
+        let imgUrl=dataUrl;
+        if(hasCloud){showToast(`Uploading back ${f.name}…`,'i');imgUrl=await window.uploadToCloudinary(dataUrl,cfg_cl.folder+'/'+activeSchool+'/back-templates');}
+        const tpl={id,name,image:imgUrl};
+        if(fbOk&&window.fbSaveTemplates)await window.fbSaveTemplates([tpl],activeSchool+'_back');
+        setSchoolBackTemplates(prev=>({...prev,[activeSchool]:[...(prev[activeSchool]||[]),tpl]}));
+        setActiveBackTplId(id);showToast(`✅ Back template "${name}" added`,'s');
+      }catch(e){showToast('Upload failed: '+e.message,'e');}
+    }
+    setBackTplUploading(false);
+  };
+
+  const deleteBackTemplate=async(id)=>{
+    if(!activeSchool)return;
+    const remaining=(schoolBackTemplates[activeSchool]||[]).filter(t=>t.id!==id);
+    setSchoolBackTemplates(prev=>({...prev,[activeSchool]:remaining}));
+    if(activeBackTplId===id)setActiveBackTplId(remaining.length?remaining[0].id:null);
+    if(fbOk&&window.fbDeleteTemplate){
+      try{await window.fbDeleteTemplate(id,activeSchool+'_back');showToast('Back template deleted ☁️','s');}
+      catch(e){showToast('Back template removed locally only','w');}
+    }else showToast('Back template removed','s');
   };
 
   const deleteTemplate=id=>{
@@ -1486,7 +1779,6 @@ function App(){
   const departments=useMemo(()=>[...new Set(teachers.map(t=>t.DEPARTMENT).filter(Boolean))].sort(),[teachers]);
   const totalPg=Math.max(1,Math.ceil(filtered.length/PER));
   const paginated=filtered.slice((pg-1)*PER,pg*PER);
-  const totalPvPg=Math.max(1,Math.ceil(filtered.length/CARDS_PP));
   const readImg=f=>new Promise((res,rej)=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.onerror=rej;r.readAsDataURL(f);});
   const designerTeachers=teachers.length?teachers:SAMPLES;
   const currentSchool=schools.find(s=>s.id===activeSchool);
@@ -1520,6 +1812,12 @@ function App(){
         const bad=rawTeachers.filter(x=>!x._ok).length;
         showToast(`Loaded ${rawTeachers.length} teachers${bad?` · ${bad} issues`:''}`,bad?'w':'s');
         setTab('teachers');
+        // Auto-save to Firebase after Excel load
+        if(window.fbSave&&window._fbReady){
+          try{await window.fbSave(rawTeachers,activeSchool,activeSession);showToast(`☁️ Auto-saved ${rawTeachers.length} teachers to Firebase`,'s');}
+          catch(e){showToast('Auto-save to Firebase failed: '+e.message,'w');}
+        }
+        
       }catch(e){showToast('Read error: '+e.message,'e');}
       setLoading(false);
     };
@@ -1702,17 +2000,33 @@ function App(){
     );
   }
 
+  const printFiltered=useMemo(()=>{
+    let r=[...filtered];
+    const q=printFilter.toLowerCase();
+    if(q)r=r.filter(t=>(t.NAME||'').toLowerCase().includes(q)||(t.EMPLOYEE_ID||'').toLowerCase().includes(q));
+    if(printDesig)r=r.filter(t=>t.DESIGNATION===printDesig);
+    if(printDept)r=r.filter(t=>t.DEPARTMENT===printDept);
+    return r;
+  },[filtered,printFilter,printDesig,printDept]);
+
+  const printTeachers=useMemo(()=>{
+    if(printSelMode&&selectedForPrint.size>0)return printFiltered.filter(t=>selectedForPrint.has(teacherKey(t)));
+    return printFiltered;
+  },[printFiltered,printSelMode,selectedForPrint]);
+
+  const totalPvPg=Math.max(1,Math.ceil(printFiltered.length/CARDS_PP));
+
   const sidebar=(
     <div className="sidebar no-print">
       {tplFileInputEl}
       <div className="sb-hdr">🎨 Designer — {currentSchool?.name||'No School'}</div>
-      <div className="sb-body" ref={sbBodyRef} onScroll={e=>{sbScrollRef.current=e.currentTarget.scrollTop;}}>
+      <div className="sb-body" ref={sbBodyRef} onScroll={e=>{sbScrollRef.current=e.currentTarget.scrollTop;}}>{(()=>{const mc={...BASE_CFG,...(schoolCfgs[activeSchool]||{}),...pendingCfg};return(<>
         <div style={{background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:6,padding:'5px 8px',marginBottom:7,display:'flex',alignItems:'center',gap:6}}>
           <span style={{fontSize:8.5,color:'#166534',flex:1,fontWeight:700}}>Settings auto-save locally. Push to Firebase below.</span>
           <button className="btn btn-grn btn-sm" onClick={saveCfgToFirebase} disabled={isSavingCfg||!fbOk}>{isSavingCfg?'Saving…':'💾 Save'}</button>
         </div>
         <div style={{display:'flex',gap:2,marginBottom:7,flexWrap:'wrap'}}>
-          {[['tpl','🎴','Tpl'],['school','🏫','School'],['photo','📷','Photo'],['overlay','📋','Overlay'],['fields','📝','Fields'],['assets','🖼️','Assets'],['print','🖨️','Print'],['cf','☁️','CF']].map(([k,ic,lbl])=>(
+          {[['tpl','🎴','Tpl'],['backtpl','🔄','Back'],['school','🏫','School'],['photo','📷','Photo'],['overlay','📋','Overlay'],['fields','📝','Fields'],['backfields','📋','Back\nFlds'],['assets','🖼️','Assets'],['print','🖨️','Print'],['cf','☁️','CF']].map(([k,ic,lbl])=>(
             <button key={k} onClick={()=>setDesignTab(k)} style={{flex:'1 1 auto',padding:'4px 2px',fontSize:7.5,fontWeight:700,border:'1px solid var(--bdr)',borderRadius:4,background:designTab===k?'#0f3d36':'#f0fdfa',color:designTab===k?'#fff':'#0f3d36',cursor:'pointer',fontFamily:'Barlow,sans-serif',textTransform:'uppercase'}}>{ic}<br/>{lbl}</button>
           ))}
         </div>
@@ -1742,6 +2056,198 @@ function App(){
           </SbSec>
         </div>)}
 
+        
+        {designTab==='backtpl'&&(<div>
+          {backTplFileInputEl}
+          <SbSec title="Upload Back Template" icon="🔄">
+            <div className={`tpl-upload-zone${backTplUploading?' uploading':''}`} onDragOver={e=>{e.preventDefault();}} onDrop={e=>{e.preventDefault();if(!backTplUploading)uploadBackTemplateFiles(e.dataTransfer.files);}}>
+              <div className="tup-icon">{backTplUploading?'⏳':'🔄'}</div>
+              <div className="tup-lbl">{backTplUploading?'Uploading…':'Upload Back Template'}</div>
+              <div className="tup-sub">PNG, JPG · Drag & drop or browse</div>
+            </div>
+            {!backTplUploading&&(<button className="btn btn-navy btn-sm" style={{width:'100%',marginBottom:4}} onClick={()=>{if(backTplFileInputRef.current){backTplFileInputRef.current.value='';backTplFileInputRef.current.click();}}}>📂 Browse & Upload Back</button>)}
+          </SbSec>
+          <SbSec title="Back Templates" icon="🗂️">
+            {currentBackTemplates.length===0?(<div className="no-tpl-msg"><div style={{fontSize:20,marginBottom:4}}>🔄</div><div style={{fontWeight:700}}>No back templates yet</div></div>):(
+              <>
+                {activeBackTplId&&(<div className="tpl-active-banner">✓ Active Back: <strong>{currentBackTemplates.find(t=>t.id===activeBackTplId)?.name||'Template'}</strong></div>)}
+                <div className="tpl-gallery">
+                  {currentBackTemplates.map(t=>(<div key={t.id} className={`tpl-thumb-card${activeBackTplId===t.id?' active':''}`} onClick={()=>{setActiveBackTplId(t.id);showToast(`Back "${t.name}" selected`,'s');}}>
+                    <button className="tpl-thumb-del" onClick={e=>{e.stopPropagation();e.preventDefault();deleteBackTemplate(t.id);}}>✕</button>
+                    <img src={t.image} className="tpl-thumb-img" alt={t.name} crossOrigin="anonymous"/>
+                    <div className="tpl-thumb-name">{t.name}</div>
+                  </div>))}
+                </div>
+              </>
+            )}
+          </SbSec>
+          <SbSec title="Back Side Layout" icon="📐">
+            <div style={{fontSize:8.5,color:'var(--tx2)',marginBottom:6,lineHeight:1.5}}>Adjust back-side name, fields, logo positions.</div>
+            <SliderWithArrows label="Name Y" valKey="backNameY" val={mc.backNameY!==undefined?mc.backNameY:120} min={0} max={300} step={1} set={set} unit="px" resetVal={120}/>
+            <SliderWithArrows label="Name X" valKey="backNameX" val={mc.backNameX||0} min={-100} max={100} step={1} set={set} unit="px" resetVal={0}/>
+            <SliderWithArrows label="Name Size" valKey="backNameFontSize" val={mc.backNameFontSize||11} min={7} max={28} step={0.5} set={set}/>
+            <div className="sb-row"><label>Name Color</label><input type="color" value={mc.backNameColor||'#0d1f6b'} onChange={e=>set('backNameColor',e.target.value)}/><span className="val">{mc.backNameColor||'#0d1f6b'}</span></div>
+            <div style={{height:6}}/>
+            <SliderWithArrows label="Fields Y" valKey="backFieldsY" val={mc.backFieldsY!==undefined?mc.backFieldsY:140} min={80} max={310} step={1} set={set} unit="px" resetVal={140}/>
+            <SliderWithArrows label="Fields X" valKey="backFieldsX" val={mc.backFieldsX||0} min={-100} max={100} step={1} set={set} unit="px" resetVal={0}/>
+            <div style={{height:6}}/>
+            <div style={{fontSize:8.5,fontWeight:800,color:'#0f3d36',marginBottom:4,textTransform:'uppercase'}}>Back Logo</div>
+            <div className="sb-row"><label>Show</label><label className="tog"><input type="checkbox" checked={mc.showBackLogo!==false} onChange={e=>set('showBackLogo',e.target.checked)}/><span className="tog-sl"/></label></div>
+            <SliderWithArrows label="Logo Size" valKey="backLogoSize" val={mc.backLogoSize||30} min={16} max={80} step={1} set={set} unit="px"/>
+            <XYBlock label="Logo Position" xKey="backLogoX" yKey="backLogoY" xVal={mc.backLogoX||0} yVal={mc.backLogoY||6} min={-200} max={200} set={set}/>
+            <div style={{height:6}}/>
+            <div style={{fontSize:8.5,fontWeight:800,color:'#0f3d36',marginBottom:4,textTransform:'uppercase'}}>Back Watermark</div>
+            <div className="sb-row"><label>Show</label><label className="tog"><input type="checkbox" checked={mc.showBackWM!==false} onChange={e=>set('showBackWM',e.target.checked)}/><span className="tog-sl"/></label></div>
+            <SliderWithArrows label="Opacity" valKey="backWmOpacity" val={+(mc.backWmOpacity||.12).toFixed(2)} min={0.02} max={0.9} step={0.01} set={set}/>
+            <SliderWithArrows label="Size" valKey="backWmSize" val={mc.backWmSize||90} min={40} max={280} step={5} set={set} unit="px"/>
+            <SeparateXYControl label="WM Position" xKey="backWmX" yKey="backWmY" xVal={mc.backWmX||0} yVal={mc.backWmY||0} min={-200} max={200} set={set}/>
+            <div style={{height:6}}/>
+            <div style={{fontSize:8.5,fontWeight:800,color:'#0f3d36',marginBottom:4,textTransform:'uppercase'}}>Back School Header</div>
+            <div className="sb-row"><label>Show</label><label className="tog"><input type="checkbox" checked={mc.showBackSchoolOverlay!==false} onChange={e=>set('showBackSchoolOverlay',e.target.checked)}/><span className="tog-sl"/></label></div>
+            <XYBlock label="Header Block" xKey="backSchoolOverlayX" yKey="backSchoolOverlayY" xVal={mc.backSchoolOverlayX||0} yVal={mc.backSchoolOverlayY||0} min={-200} max={200} set={set}/>
+            {[['Line 1','back',1,10],['Line 2','back',2,7],['Line 3','back',3,6],['Line 4','back',4,6]].map(([lbl,prefix,n,defSz])=>{
+              const szKey=`${prefix}Line${n}Size`,xKey=`${prefix}Line${n}X`,yKey=`${prefix}Line${n}Y`,colKey=`${prefix}Line${n}Color`;
+              return(<div key={n} className="line-ctrl-box" style={{marginBottom:6}}>
+                <div className="line-ctrl-box-title"><span>{lbl}</span><button style={{fontSize:8,padding:'1px 5px',background:'rgba(239,68,68,.1)',border:'1px solid rgba(239,68,68,.25)',color:'var(--red)',borderRadius:3,cursor:'pointer'}} onClick={e=>{e.stopPropagation();set(szKey,defSz);set(xKey,0);set(yKey,0);set(colKey,'');}}>↺</button></div>
+                <div style={{display:'flex',alignItems:'center',gap:2,marginBottom:3}}>
+                  <span style={{fontSize:'8px',color:'var(--tx2)',fontWeight:700,minWidth:32}}>SIZE</span>
+                  <button className="arr-btn" onClick={e=>{e.stopPropagation();set(szKey,Math.max(5,(mc[szKey]||defSz)-0.5));}}>▼</button>
+                  <input type="range" min={5} max={28} step={0.5} value={mc[szKey]||defSz} onChange={e=>{e.stopPropagation();set(szKey,parseFloat(e.target.value));}} style={{flex:1,accentColor:'var(--teal)',height:3,cursor:'pointer'}}/>
+                  <button className="arr-btn" onClick={e=>{e.stopPropagation();set(szKey,Math.min(28,(mc[szKey]||defSz)+0.5));}}>▲</button>
+                  <span style={{fontSize:'8px',color:'var(--teal)',fontWeight:700,minWidth:22,textAlign:'right'}}>{mc[szKey]||defSz}</span>
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:2,marginBottom:2}}>
+                  <span style={{fontSize:'8px',fontWeight:700,minWidth:10}}>X</span>
+                  <button className="arr-btn" onClick={e=>{e.stopPropagation();set(xKey,(mc[xKey]||0)-1);}}>◀</button>
+                  <input type="range" min={-200} max={200} step={1} value={mc[xKey]||0} onChange={e=>{e.stopPropagation();set(xKey,parseFloat(e.target.value));}} style={{flex:1,accentColor:'var(--teal)',height:3,cursor:'pointer'}}/>
+                  <button className="arr-btn" onClick={e=>{e.stopPropagation();set(xKey,(mc[xKey]||0)+1);}}>▶</button>
+                  <span style={{fontSize:'8px',color:'var(--teal)',fontWeight:700,minWidth:28,textAlign:'right'}}>{mc[xKey]||0}</span>
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:2,marginBottom:3}}>
+                  <span style={{fontSize:'8px',fontWeight:700,minWidth:10}}>Y</span>
+                  <button className="arr-btn" onClick={e=>{e.stopPropagation();set(yKey,(mc[yKey]||0)-1);}}>▲</button>
+                  <input type="range" min={-200} max={200} step={1} value={mc[yKey]||0} onChange={e=>{e.stopPropagation();set(yKey,parseFloat(e.target.value));}} style={{flex:1,accentColor:'var(--teal)',height:3,cursor:'pointer'}}/>
+                  <button className="arr-btn" onClick={e=>{e.stopPropagation();set(yKey,(mc[yKey]||0)+1);}}>▼</button>
+                  <span style={{fontSize:'8px',color:'var(--teal)',fontWeight:700,minWidth:28,textAlign:'right'}}>{mc[yKey]||0}</span>
+                </div>
+                <div className="sb-row" style={{marginBottom:0}}>
+                  <label>Color</label>
+                  <input type="color" value={mc[colKey]||mc.schoolColor||'#ffffff'} onChange={e=>set(colKey,e.target.value)}/>
+                  <span className="val" style={{fontSize:8}}>{mc[colKey]||'(global)'}</span>
+                  {mc[colKey]&&<button className="btn btn-red btn-xs" onClick={()=>set(colKey,'')}>↺</button>}
+                </div>
+              </div>);
+            })}
+          </SbSec>
+        </div>)}
+
+        {designTab==='backfields'&&(<div>
+          <SbSec title="Back Side Fields" icon="📋">
+            <div style={{marginBottom:8}}>
+              <div style={{display:'flex',alignItems:'center',gap:3,marginBottom:2}}>
+                <span style={{fontSize:'9px',fontWeight:800,color:'#0f3d36',textTransform:'uppercase',flex:1}}>Global Back Size</span>
+                <button className="arr-btn" onClick={()=>set('backGlobalFieldFontSize',Math.max(5,+((mc.backGlobalFieldFontSize||10)-0.5).toFixed(1)))}>▼</button>
+                <button className="arr-btn" onClick={()=>set('backGlobalFieldFontSize',Math.min(24,+((mc.backGlobalFieldFontSize||10)+0.5).toFixed(1)))}>▲</button>
+                <button className="arr-btn rst" onClick={()=>set('backGlobalFieldFontSize',10)}>↺</button>
+                <span style={{fontSize:'9px',color:'var(--teal)',fontWeight:900,minWidth:26,textAlign:'right'}}>{mc.backGlobalFieldFontSize||10}px</span>
+              </div>
+              <input type="range" min={5} max={24} step={0.5} value={mc.backGlobalFieldFontSize||10} onChange={e=>set('backGlobalFieldFontSize',parseFloat(e.target.value))} style={{width:'100%',accentColor:'var(--teal)',height:4,cursor:'pointer'}}/>
+            </div>
+            <div className="sb-row">
+              <label>Label Color</label>
+              <input type="color" value={mc.backFieldLabelColor||mc.labelColor||'#0d1f6b'} onChange={e=>set('backFieldLabelColor',e.target.value)}/>
+              <span className="val">{mc.backFieldLabelColor||'global'}</span>
+              {mc.backFieldLabelColor&&<button className="btn btn-red btn-xs" onClick={()=>set('backFieldLabelColor','')}>↺</button>}
+            </div>
+            <div className="sb-row" style={{marginBottom:8}}>
+              <label>Value Color</label>
+              <input type="color" value={mc.backFieldValueColor||mc.fieldColor||'#111827'} onChange={e=>set('backFieldValueColor',e.target.value)}/>
+              <span className="val">{mc.backFieldValueColor||'global'}</span>
+              {mc.backFieldValueColor&&<button className="btn btn-red btn-xs" onClick={()=>set('backFieldValueColor','')}>↺</button>}
+            </div>
+            <span className="sb-lbl">Back Fields Font</span>
+            <FontSelect value={mc.backFieldFont||mc.fieldFont||ALL_FONTS[0].v} onChange={v=>set('backFieldFont',v)} previewText="Father's Name"/>
+            <div style={{height:8}}/>
+            <div style={{fontSize:8.5,fontWeight:800,color:'#0f3d36',textTransform:'uppercase',marginBottom:6}}>🖼️ Back Logo (separate from front)</div>
+            <div className="sb-row"><label>Use Separate</label><label className="tog"><input type="checkbox" checked={!!mc.backLogoSeparate} onChange={e=>set('backLogoSeparate',e.target.checked)}/><span className="tog-sl"/></label></div>
+            {mc.backLogoSeparate&&(<>
+              <div className="up-btn" onClick={()=>backLogoRef.current.click()}>{mc.backLogo?<><img src={mc.backLogo} className="up-thumb" alt=""/><span>Change Back Logo</span></>:<><span>🖼️</span><span>Upload Back Logo</span></>}</div>
+              <input ref={backLogoRef} type="file" accept="image/*" style={{display:'none'}} onChange={async e=>{if(!e.target.files[0])return;const url=await readImg(e.target.files[0]);set('backLogo',url);}}/>
+              {mc.backLogo&&<button className="btn btn-red btn-sm" style={{width:'100%',marginBottom:4}} onClick={()=>set('backLogo',null)}>✕ Remove Back Logo</button>}
+            </>)}
+            <div className="sb-row"><label>Show Logo</label><label className="tog"><input type="checkbox" checked={mc.showBackLogo!==false} onChange={e=>set('showBackLogo',e.target.checked)}/><span className="tog-sl"/></label></div>
+            <SliderWithArrows label="Logo Size" valKey="backLogoSize" val={mc.backLogoSize||30} min={16} max={80} step={1} set={set} unit="px"/>
+            <XYBlock label="Logo XY" xKey="backLogoX" yKey="backLogoY" xVal={mc.backLogoX||0} yVal={mc.backLogoY||6} min={-200} max={200} set={set}/>
+            <div style={{height:8}}/>
+            <div style={{fontSize:8.5,fontWeight:800,color:'#0f3d36',textTransform:'uppercase',marginBottom:6}}>💧 Back Watermark (separate from front)</div>
+            <div className="sb-row"><label>Use Separate</label><label className="tog"><input type="checkbox" checked={!!mc.backWmSeparate} onChange={e=>set('backWmSeparate',e.target.checked)}/><span className="tog-sl"/></label></div>
+            {mc.backWmSeparate&&(<>
+              <div className="up-btn" onClick={()=>backWmRef.current.click()}>{mc.backWatermark?<><img src={mc.backWatermark} className="up-thumb" alt=""/><span>Change Back WM</span></>:<><span>💧</span><span>Upload Back Watermark</span></>}</div>
+              <input ref={backWmRef} type="file" accept="image/*" style={{display:'none'}} onChange={async e=>{if(!e.target.files[0])return;const url=await readImg(e.target.files[0]);set('backWatermark',url);}}/>
+              {mc.backWatermark&&<button className="btn btn-red btn-sm" style={{width:'100%',marginBottom:4}} onClick={()=>set('backWatermark',null)}>✕ Remove Back WM</button>}
+            </>)}
+            <div className="sb-row"><label>Show WM</label><label className="tog"><input type="checkbox" checked={mc.showBackWM!==false} onChange={e=>set('showBackWM',e.target.checked)}/><span className="tog-sl"/></label></div>
+            <SliderWithArrows label="Opacity" valKey="backWmOpacity" val={+(mc.backWmOpacity||.12).toFixed(2)} min={0.02} max={0.9} step={0.01} set={set}/>
+            <SliderWithArrows label="Size" valKey="backWmSize" val={mc.backWmSize||90} min={40} max={280} step={5} set={set} unit="px"/>
+            <SeparateXYControl label="WM Position" xKey="backWmX" yKey="backWmY" xVal={mc.backWmX||0} yVal={mc.backWmY||0} min={-200} max={200} set={set}/>
+            <div style={{height:8}}/>
+            <div style={{fontSize:8.5,fontWeight:800,color:'#0f3d36',textTransform:'uppercase',marginBottom:4}}>👤 Back Name Row</div>
+            <div className="sb-row"><label>Show Name</label><label className="tog"><input type="checkbox" checked={mc.showBackName!==false} onChange={e=>set('showBackName',e.target.checked)}/><span className="tog-sl"/></label></div>
+          </SbSec>
+          <SbSec title="Custom Text Line 1 (Back)" icon="📝">
+          <div className="sb-row"><label>Show</label><label className="tog"><input type="checkbox" checked={mc.showBackCustomLine1!==false} onChange={e=>set('showBackCustomLine1',e.target.checked)}/><span className="tog-sl"/></label></div>
+          <div style={{marginBottom:6}}><span className="sb-lbl">Text Content</span><input type="text" value={mc.backCustomLine1Text||''} onChange={e=>set('backCustomLine1Text',e.target.value)} placeholder="e.g. PERSONAL DETAILS" style={{width:'100%',border:'1px solid var(--bdr2)',borderRadius:4,padding:'4px 7px',fontSize:10,outline:'none',fontFamily:'Barlow,sans-serif'}}/></div>
+          <div className="sb-row"><label>Align</label>{['left','center','right'].map(a=>(<button key={a} onClick={()=>set('backCustomLine1Align',a)} style={{flex:1,padding:'2px 4px',background:(mc.backCustomLine1Align||'left')===a?'#0f3d36':'#f0fdfa',color:(mc.backCustomLine1Align||'left')===a?'#fff':'#0f3d36',border:'1px solid var(--bdr2)',borderRadius:3,fontSize:9,cursor:'pointer'}}>{a[0].toUpperCase()}</button>))}</div>
+          <SliderWithArrows label="Size" valKey="backCustomLine1Size" val={mc.backCustomLine1Size||11} min={6} max={28} step={0.5} set={set} unit="px"/>
+          <div className="sb-row"><label>Color</label><input type="color" value={mc.backCustomLine1Color||'#0d1f6b'} onChange={e=>set('backCustomLine1Color',e.target.value)}/><span className="val">{mc.backCustomLine1Color||'#0d1f6b'}</span></div>
+          <span className="sb-lbl" style={{marginTop:4}}>Font</span>
+          <FontSelect value={mc.backCustomLine1Font||ALL_FONTS[0].v} onChange={v=>set('backCustomLine1Font',v)} previewText={mc.backCustomLine1Text||'Personal Details'}/>
+          <SeparateXYControl label="Position" xKey="backCustomLine1X" yKey="backCustomLine1Y" xVal={mc.backCustomLine1X||0} yVal={mc.backCustomLine1Y||20} min={-300} max={300} set={set}/>
+        </SbSec>
+          {BACK_FIELD_DEFS.map(fd=>(
+            <SbSec key={fd.key} title={fd.label} icon={mc[fd.ek]||fd.emoji}>
+              <div style={{background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:5,padding:'6px 8px',marginBottom:6}}>
+                <div style={{display:'flex',alignItems:'center',gap:4,marginBottom:5,background:'rgba(255,255,255,.7)',borderRadius:4,padding:'3px 6px'}}>
+                  <span style={{fontSize:8,fontWeight:800,color:'#166534',minWidth:50,textTransform:'uppercase'}}>Show Row</span>
+                  <label className="tog" style={{margin:0}}><input type="checkbox" checked={mc[fd.showRowKey]!==false} onChange={e=>set(fd.showRowKey,e.target.checked)}/><span className="tog-sl"/></label>
+                  <span style={{fontSize:8,color:mc[fd.showRowKey]!==false?'#059669':'#dc2626',fontWeight:700,marginLeft:2}}>{mc[fd.showRowKey]!==false?'ON':'OFF'}</span>
+                </div>
+                {mc[fd.showRowKey]!==false&&(
+                  <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+                    {[['Icon',fd.showEk,'#fffbeb','#fde68a','#92400e'],['Label',fd.showLabelKey,'#eff6ff','#bfdbfe','#1d4ed8'],['Value',fd.showValueKey,'#f0fdfa','#99f6e4','#0f766e']].map(([lbl,k,bg,bc,tc])=>(
+                      <div key={k} style={{flex:1,minWidth:55,background:bg,border:`1px solid ${bc}`,borderRadius:4,padding:'4px 5px',textAlign:'center'}}>
+                        <div style={{fontSize:7.5,fontWeight:800,color:tc,textTransform:'uppercase',marginBottom:3}}>{lbl}</div>
+                        <label className="tog" style={{margin:'0 auto',display:'block',width:30}}><input type="checkbox" checked={mc[k]!==false} onChange={e=>set(k,e.target.checked)}/><span className="tog-sl"/></label>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div style={{background:'#f8faff',border:'1px solid var(--bdr)',borderRadius:5,padding:'6px 8px',marginBottom:6}}>
+                <div style={{fontSize:8.5,fontWeight:800,color:'#0f3d36',textTransform:'uppercase',marginBottom:5}}>🎨 Colors</div>
+                <div className="sb-row" style={{marginBottom:4}}>
+                  <label style={{fontSize:8.5}}>Label</label>
+                  <input type="color" value={mc[fd.labelColorKey]||mc.backFieldLabelColor||mc.labelColor||'#0d1f6b'} onChange={e=>set(fd.labelColorKey,e.target.value)}/>
+                  <span className="val" style={{fontSize:7.5,flex:1,textAlign:'left',marginLeft:3}}>{mc[fd.labelColorKey]||'global'}</span>
+                  {mc[fd.labelColorKey]&&<button className="btn btn-red btn-xs" style={{padding:'1px 4px'}} onClick={()=>set(fd.labelColorKey,'')}>↺</button>}
+                </div>
+                <div className="sb-row" style={{marginBottom:0}}>
+                  <label style={{fontSize:8.5}}>Value</label>
+                  <input type="color" value={mc[fd.valueColorKey]||mc.backFieldValueColor||mc.fieldColor||'#111827'} onChange={e=>set(fd.valueColorKey,e.target.value)}/>
+                  <span className="val" style={{fontSize:7.5,flex:1,textAlign:'left',marginLeft:3}}>{mc[fd.valueColorKey]||'global'}</span>
+                  {mc[fd.valueColorKey]&&<button className="btn btn-red btn-xs" style={{padding:'1px 4px'}} onClick={()=>set(fd.valueColorKey,'')}>↺</button>}
+                </div>
+              </div>
+              <EmojiBlock emojiKey={fd.ek} sizeKey={fd.esk} xKey={fd.exk} yKey={fd.eyk} showKey={fd.showEk} cfg={mc} set={set} defaultEmoji={fd.emoji}/>
+              <FieldAdjBlock label="Position & Size" xKey={fd.xk} yKey={fd.yk} sizeKey={fd.sk} spacingKey={fd.spk} fontKey={fd.fk} cfg={mc} set={set} defaultSize={mc.backGlobalFieldFontSize||10}/>
+              <div style={{fontSize:8.5,color:'var(--teal)',fontWeight:700,marginBottom:3,marginTop:4}}>Label offset:</div>
+              <XYBlock xKey={fd.lx} yKey={fd.ly} xVal={mc[fd.lx]||0} yVal={mc[fd.ly]||0} min={-200} max={200} set={set}/>
+              <div style={{fontSize:8.5,color:'var(--teal)',fontWeight:700,marginBottom:3,marginTop:4}}>Value offset:</div>
+              <XYBlock xKey={fd.vx} yKey={fd.vy} xVal={mc[fd.vx]||0} yVal={mc[fd.vy]||0} min={-200} max={200} set={set}/>
+            </SbSec>
+          ))}
+          </div>)} 
+        
         {designTab==='school'&&(
           <SbSec title="School Header Overlay" icon="🏫">
             <div className="sb-row"><label>Show</label><label className="tog"><input type="checkbox" checked={cfg.showSchoolOverlay!==false} onChange={e=>set('showSchoolOverlay',e.target.checked)}/><span className="tog-sl"/></label></div>
@@ -1750,6 +2256,80 @@ function App(){
             <FontSelect value={cfg.schoolFont||ALL_FONTS[0].v} onChange={v=>set('schoolFont',v)} previewText={cfg.schoolLine1||'School Name'}/>
             <XYBlock label="Header Block Position" xKey="schoolOverlayX" yKey="schoolOverlayY" xVal={cfg.schoolOverlayX||0} yVal={cfg.schoolOverlayY||0} min={-200} max={200} set={set}/>
             <div style={{height:6}}/>
+            <div className="line-ctrl-box">
+              <div className="line-ctrl-box-title"><span>🏛️ Govt Line (Pre-written)</span>
+                <div style={{display:'flex',alignItems:'center',gap:4}}><label className="tog" style={{margin:0}}><input type="checkbox" checked={cfg.showGovtLine!==false} onChange={e=>set('showGovtLine',e.target.checked)}/><span className="tog-sl"/></label></div>
+              </div>
+              <div style={{marginBottom:6}}><input type="text" value={cfg.govtLine||'GOVT. OF BIHAR'} onChange={e=>set('govtLine',e.target.value)} style={{width:'100%',border:'1px solid var(--bdr2)',borderRadius:4,padding:'3px 6px',fontSize:10,outline:'none',fontFamily:'Barlow,sans-serif'}}/></div>
+              <div style={{display:'flex',alignItems:'center',gap:2,marginBottom:3}}>
+                <span style={{fontSize:'8px',color:'var(--tx2)',fontWeight:700,minWidth:32}}>SIZE</span>
+                <button className="arr-btn" onClick={e=>{e.stopPropagation();set('govtLineSize',Math.max(5,(cfg.govtLineSize||8)-0.5));}}>▼</button>
+                <input type="range" min={5} max={28} step={0.5} value={cfg.govtLineSize||8} onChange={e=>set('govtLineSize',parseFloat(e.target.value))} style={{flex:1,accentColor:'var(--teal)',height:3,cursor:'pointer'}}/>
+                <button className="arr-btn" onClick={e=>{e.stopPropagation();set('govtLineSize',Math.min(28,(cfg.govtLineSize||8)+0.5));}}>▲</button>
+                <span style={{fontSize:'8px',color:'var(--teal)',fontWeight:700,minWidth:22,textAlign:'right'}}>{cfg.govtLineSize||8}</span>
+              </div>
+              <div style={{display:'flex',gap:4}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:'8px',color:'var(--tx2)',fontWeight:700,marginBottom:2}}>X</div>
+                  <div style={{display:'flex',gap:2,alignItems:'center'}}>
+                    <button className="arr-btn" onClick={()=>set('govtLineX',(cfg.govtLineX||0)-1)}>◀</button>
+                    <input type="range" min={-200} max={200} value={cfg.govtLineX||0} onChange={e=>set('govtLineX',parseFloat(e.target.value))} style={{flex:1,accentColor:'var(--teal)',height:3}}/>
+                    <button className="arr-btn" onClick={()=>set('govtLineX',(cfg.govtLineX||0)+1)}>▶</button>
+                    <span style={{fontSize:'8px',color:'var(--teal)',fontWeight:700,minWidth:22,textAlign:'right'}}>{cfg.govtLineX||0}</span>
+                  </div>
+                </div>
+              </div>
+              <div style={{display:'flex',gap:4,marginTop:3}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:'8px',color:'var(--tx2)',fontWeight:700,marginBottom:2}}>Y</div>
+                  <div style={{display:'flex',gap:2,alignItems:'center'}}>
+                    <button className="arr-btn" onClick={()=>set('govtLineY',(cfg.govtLineY||0)-1)}>▲</button>
+                    <input type="range" min={-200} max={200} value={cfg.govtLineY||0} onChange={e=>set('govtLineY',parseFloat(e.target.value))} style={{flex:1,accentColor:'var(--teal)',height:3}}/>
+                    <button className="arr-btn" onClick={()=>set('govtLineY',(cfg.govtLineY||0)+1)}>▼</button>
+                    <span style={{fontSize:'8px',color:'var(--teal)',fontWeight:700,minWidth:22,textAlign:'right'}}>{cfg.govtLineY||0}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="sb-row" style={{marginBottom:0,marginTop:4}}>
+                <label>Color</label>
+                <input type="color" value={cfg.govtLineColor||cfg.schoolColor||'#ffffff'} onChange={e=>set('govtLineColor',e.target.value)}/>
+                <span className="val" style={{fontSize:8}}>{cfg.govtLineColor||'(global)'}</span>
+                {cfg.govtLineColor&&<button className="btn btn-red btn-xs" onClick={()=>set('govtLineColor','')}>↺</button>}
+              </div>
+            </div>
+            <div className="line-ctrl-box">
+              <div className="line-ctrl-box-title"><span>📚 Education Line (Pre-written)</span>
+                <div style={{display:'flex',alignItems:'center',gap:4}}><label className="tog" style={{margin:0}}><input type="checkbox" checked={cfg.showEducationLine!==false} onChange={e=>set('showEducationLine',e.target.checked)}/><span className="tog-sl"/></label></div>
+              </div>
+              <div style={{marginBottom:6}}><input type="text" value={cfg.educationLine||'EDUCATION DEPARTMENT'} onChange={e=>set('educationLine',e.target.value)} style={{width:'100%',border:'1px solid var(--bdr2)',borderRadius:4,padding:'3px 6px',fontSize:10,outline:'none',fontFamily:'Barlow,sans-serif'}}/></div>
+              <div style={{display:'flex',alignItems:'center',gap:2,marginBottom:3}}>
+                <span style={{fontSize:'8px',color:'var(--tx2)',fontWeight:700,minWidth:32}}>SIZE</span>
+                <button className="arr-btn" onClick={e=>{e.stopPropagation();set('educationLineSize',Math.max(5,(cfg.educationLineSize||7)-0.5));}}>▼</button>
+                <input type="range" min={5} max={28} step={0.5} value={cfg.educationLineSize||7} onChange={e=>set('educationLineSize',parseFloat(e.target.value))} style={{flex:1,accentColor:'var(--teal)',height:3,cursor:'pointer'}}/>
+                <button className="arr-btn" onClick={e=>{e.stopPropagation();set('educationLineSize',Math.min(28,(cfg.educationLineSize||7)+0.5));}}>▲</button>
+                <span style={{fontSize:'8px',color:'var(--teal)',fontWeight:700,minWidth:22,textAlign:'right'}}>{cfg.educationLineSize||7}</span>
+              </div>
+              <div style={{display:'flex',gap:2,alignItems:'center',marginBottom:2}}>
+                <span style={{fontSize:'8px',fontWeight:700,minWidth:10}}>X</span>
+                <button className="arr-btn" onClick={()=>set('educationLineX',(cfg.educationLineX||0)-1)}>◀</button>
+                <input type="range" min={-200} max={200} value={cfg.educationLineX||0} onChange={e=>set('educationLineX',parseFloat(e.target.value))} style={{flex:1,accentColor:'var(--teal)',height:3}}/>
+                <button className="arr-btn" onClick={()=>set('educationLineX',(cfg.educationLineX||0)+1)}>▶</button>
+                <span style={{fontSize:'8px',color:'var(--teal)',fontWeight:700,minWidth:22,textAlign:'right'}}>{cfg.educationLineX||0}</span>
+              </div>
+              <div style={{display:'flex',gap:2,alignItems:'center',marginBottom:4}}>
+                <span style={{fontSize:'8px',fontWeight:700,minWidth:10}}>Y</span>
+                <button className="arr-btn" onClick={()=>set('educationLineY',(cfg.educationLineY||0)-1)}>▲</button>
+                <input type="range" min={-200} max={200} value={cfg.educationLineY||0} onChange={e=>set('educationLineY',parseFloat(e.target.value))} style={{flex:1,accentColor:'var(--teal)',height:3}}/>
+                <button className="arr-btn" onClick={()=>set('educationLineY',(cfg.educationLineY||0)+1)}>▼</button>
+                <span style={{fontSize:'8px',color:'var(--teal)',fontWeight:700,minWidth:22,textAlign:'right'}}>{cfg.educationLineY||0}</span>
+              </div>
+              <div className="sb-row" style={{marginBottom:0}}>
+                <label>Color</label>
+                <input type="color" value={cfg.educationLineColor||cfg.schoolColor||'#ffffff'} onChange={e=>set('educationLineColor',e.target.value)}/>
+                <span className="val" style={{fontSize:8}}>{cfg.educationLineColor||'(global)'}</span>
+                {cfg.educationLineColor&&<button className="btn btn-red btn-xs" onClick={()=>set('educationLineColor','')}>↺</button>}
+              </div>
+            </div>
             <SchoolLineBlock lineNum={1} label="Line 1 — School Name"/>
             <SchoolLineBlock lineNum={2} label="Line 2 — City / Address"/>
             <SchoolLineBlock lineNum={3} label="Line 3 — UDISE Code"/>
@@ -1766,7 +2346,20 @@ function App(){
             <span className="sb-lbl" style={{marginTop:6}}>School Logo</span>
             <div className="up-btn" onClick={()=>logoRef.current.click()}>{cfg.logo?<><img src={cfg.logo} className="up-thumb" alt=""/><span>Change Logo</span></>:<><span>📷</span><span>Upload Logo</span></>}</div>
             <input ref={logoRef} type="file" accept="image/*" style={{display:'none'}} onChange={async e=>{if(!e.target.files[0])return;const url=await readImg(e.target.files[0]);set('logo',url);}}/>
-            {cfg.logo&&<><button className="btn btn-red btn-sm" style={{width:'100%',marginBottom:4}} onClick={()=>set('logo',null)}>✕ Remove Logo</button><SliderWithArrows label="Logo Size" valKey="logoSize" val={cfg.logoSize||22} min={16} max={80} set={set}/></>}
+            {cfg.logo&&<>
+            <button className="btn btn-red btn-sm" style={{width:'100%',marginBottom:4}} onClick={()=>set('logo',null)}>✕ Remove Logo 1</button>
+            <SliderWithArrows label="Logo 1 Size" valKey="logoSize" val={cfg.logoSize||22} min={16} max={80} set={set}/>
+            <SeparateXYControl label="Logo 1 Position" xKey="logo1X" yKey="logo1Y" xVal={cfg.logo1X||0} yVal={cfg.logo1Y||0} min={-100} max={100} set={set}/>
+          </>}
+          <div style={{height:8}}/>
+          <span className="sb-lbl">Logo 2 (Right Side)</span>
+          <div className="sb-row"><label>Show L2</label><label className="tog"><input type="checkbox" checked={!!cfg.showLogo2} onChange={e=>set('showLogo2',e.target.checked)}/><span className="tog-sl"/></label></div>
+          <div className="up-btn" onClick={()=>{const inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.onchange=async e=>{if(e.target.files[0]){const url=await readImg(e.target.files[0]);set('logo2',url);set('showLogo2',true);}};inp.click();}}>{cfg.logo2?<><img src={cfg.logo2} className="up-thumb" alt=""/><span>Change Logo 2</span></>:<><span>🖼️</span><span>Upload Logo 2</span></>}</div>
+          {cfg.logo2&&<>
+            <button className="btn btn-red btn-sm" style={{width:'100%',marginBottom:4}} onClick={()=>{set('logo2',null);set('showLogo2',false);}}>✕ Remove Logo 2</button>
+            <SliderWithArrows label="Logo 2 Size" valKey="logo2Size" val={cfg.logo2Size||22} min={16} max={80} set={set}/>
+            <SeparateXYControl label="Logo 2 Position" xKey="logo2X" yKey="logo2Y" xVal={cfg.logo2X||0} yVal={cfg.logo2Y||0} min={-100} max={100} set={set}/>
+          </>}
           </SbSec>
         )}
 
@@ -1833,6 +2426,7 @@ function App(){
           <SbSec title="QR Code" icon="▦">
             <div className="sb-row"><label>Show QR</label><label className="tog"><input type="checkbox" checked={cfg.showBarcode!==false} onChange={e=>set('showBarcode',e.target.checked)}/><span className="tog-sl"/></label></div>
             <div className="sb-row"><label>Show ID</label><label className="tog"><input type="checkbox" checked={!!cfg.showQrCodeText} onChange={e=>set('showQrCodeText',e.target.checked)}/><span className="tog-sl"/></label></div>
+            <div className="sb-row"><label>Scan Text</label><label className="tog"><input type="checkbox" checked={cfg.showScanToVerify!==false} onChange={e=>set('showScanToVerify',e.target.checked)}/><span className="tog-sl"/></label><span style={{fontSize:8.5,color:'var(--tx2)',fontWeight:600}}>SCAN TO VERIFY</span></div>
             {/* ✅ FIX: QR size slider step=4, min=40, default=64 so QR always renders */}
             <SliderWithArrows label="QR Size" valKey="qrSize" val={cfg.qrSize||64} min={40} max={120} step={4} set={set} unit="px" resetVal={64}/>
             <div className="sb-row"><label>Position</label><select value={cfg.qrPosition||'bottom-right'} onChange={e=>set('qrPosition',e.target.value)}><option value="bottom-right">Bottom Right</option><option value="bottom-left">Bottom Left</option><option value="bottom-center">Bottom Center</option></select></div>
@@ -1852,17 +2446,7 @@ function App(){
   <SeparateXYControl label="Position" xKey="wmX" yKey="wmY" xVal={cfg.wmX||0} yVal={cfg.wmY||0} min={-200} max={200} set={set}/>
 </>}
           </SbSec>
-          <SbSec title="School Stamp" icon="🔖">
-            <div className="up-btn" onClick={()=>stampRef.current.click()}>{cfg.stamp?<><img src={cfg.stamp} className="up-thumb" alt=""/><span>Change Stamp</span></>:<><span>🔖</span><span>Upload Stamp</span></>}</div>
-            <input ref={stampRef} type="file" accept="image/*" style={{display:'none'}} onChange={async e=>{if(e.target.files[0])set('stamp',await readImg(e.target.files[0]));}}/>
-            {cfg.stamp&&<>
-  <button className="btn btn-red btn-sm" style={{width:'100%',marginBottom:5}} onClick={()=>set('stamp',null)}>✕ Remove</button>
-  <div className="sb-row"><label>Show</label><label className="tog"><input type="checkbox" checked={!!cfg.showStamp} onChange={e=>set('showStamp',e.target.checked)}/><span className="tog-sl"/></label></div>
-  <SliderWithArrows label="Opacity" valKey="stampOpacity" val={+(cfg.stampOpacity||.18).toFixed(2)} min={0.05} max={0.9} step={0.01} set={set}/>
-  <SliderWithArrows label="Size" valKey="stampSize" val={cfg.stampSize||55} min={30} max={200} step={5} set={set} unit="px"/>
-  <SeparateXYControl label="Position" xKey="stampX" yKey="stampY" xVal={cfg.stampX||0} yVal={cfg.stampY||0} min={-200} max={200} set={set}/>
-</>}
-          </SbSec>
+        
           <SbSec title="Principal Signature" icon="✍️">
             <div className="up-btn" onClick={()=>sigRef.current.click()}>{cfg.signature?<><img src={cfg.signature} style={{height:16,objectFit:'contain',maxWidth:48}} alt=""/><span>Change Sig ✓</span></>:<><span>✍️</span><span>Upload Signature</span></>}</div>
             <input ref={sigRef} type="file" accept="image/*" style={{display:'none'}} onChange={async e=>{if(e.target.files[0])set('signature',await readImg(e.target.files[0]));}}/>
@@ -1880,12 +2464,16 @@ function App(){
     </div>
     <SliderWithArrows label="Txt Size" valKey="signatureTxtSize" val={cfg.signatureTxtSize||5.5} min={4} max={18} step={0.5} set={set} unit="px"/>
     <SliderWithArrows label="Label Y Gap" valKey="signatureTxtHeight" val={cfg.signatureTxtHeight||14} min={0} max={40} step={1} set={set} unit="px"/>
-    <div className="sb-row" style={{marginBottom:0}}>
+    <div className="sb-row" style={{marginBottom:6}}>
       <label>Color</label>
       <input type="color" value={cfg.signatureLabelColor||cfg.fieldColor||'#111827'} onChange={e=>set('signatureLabelColor',e.target.value)}/>
       <span className="val">{cfg.signatureLabelColor||'global'}</span>
       {cfg.signatureLabelColor&&<button className="btn btn-red btn-xs" onClick={()=>set('signatureLabelColor','')}>↺</button>}
     </div>
+    <div style={{fontSize:8.5,fontWeight:800,color:'#0f3d36',textTransform:'uppercase',marginBottom:5}}>📷 Image Position</div>
+    <SeparateXYControl label="Image Left/Right & Up/Down" xKey="signatureImgX" yKey="signatureImgY" xVal={cfg.signatureImgX||0} yVal={cfg.signatureImgY||0} min={-150} max={150} set={set}/>
+    <div style={{fontSize:8.5,fontWeight:800,color:'#0f3d36',textTransform:'uppercase',marginBottom:5,marginTop:6}}>✏️ Principal Text Position</div>
+    <SeparateXYControl label="Text Left/Right & Up/Down" xKey="signatureTxtX" yKey="signatureTxtY" xVal={cfg.signatureTxtX||0} yVal={cfg.signatureTxtY||0} min={-150} max={150} set={set}/>
   </div>
 </>}
           </SbSec>
@@ -1920,7 +2508,7 @@ function App(){
             </div>
           </SbSec>
         </div>)}
-      </div>
+      </>)})()} </div>
     </div>
   );
 
@@ -2082,10 +2670,11 @@ function App(){
                         <div className="designer-card-name">{t.NAME||`Sample ${i+1}`}</div>
                         <div className={`card-click-wrap${isAdj?' adj-active':''}`} onClick={e=>{e.stopPropagation();openCardAdj(t,e);}}>
                           {Object.keys(over).length>0&&<div className="card-override-dot"/>}
-                          <div style={{transform:`scale(${dsnZoom})`,transformOrigin:'top left',width:CARD_W,height:CARD_H,display:'block'}}>
+                          <div style={{transform:`scale(${dsnZoom})`,transformOrigin:'top left',width:CARD_W*2+8,height:CARD_H,display:'flex',gap:8}}>
                             <IDCard s={t} cfg={stableCfg} cfgOverride={over} scale={1} templateImage={activeTemplateImage} onFieldMove={(k,v)=>set(k,v)} dragScale={dsnZoom}/>
+                            <IDCardBack s={t} cfg={stableCfg} cfgOverride={over} scale={1} templateImage={activeBackTemplateImage}/>
                           </div>
-                          <div style={{width:CARD_W*dsnZoom,height:CARD_H*dsnZoom,marginTop:-(CARD_H*(1-dsnZoom)),display:'block',pointerEvents:'none'}}/>
+                          <div style={{width:(CARD_W*2+8)*dsnZoom,height:CARD_H*dsnZoom,marginTop:-(CARD_H*(1-dsnZoom)),display:'block',pointerEvents:'none'}}/>
                           <div className="card-select-hint">{isAdj?'✓ Adjusting':'⚙ Adjust'}</div>
                         </div>
                       </div>
@@ -2096,7 +2685,7 @@ function App(){
             </div>)}
 
             {tab==='preview'&&(<div>
-              <div className="no-print" style={{display:'flex',alignItems:'center',gap:7,marginBottom:12,flexWrap:'wrap'}}>
+              <div className="no-print" style={{display:'flex',alignItems:'center',gap:7,marginBottom:8,flexWrap:'wrap'}}>
                 <div className="page-title" style={{marginBottom:0}}>Print Preview</div>
                 <div style={{flex:1}}/>
                 <select value={sheetSize} onChange={e=>setSheetSize(e.target.value)} style={{border:'1px solid var(--bdr)',borderRadius:5,padding:'4px 9px',fontSize:11,fontFamily:'Barlow,sans-serif',fontWeight:700,color:'#0f3d36',background:'#fff',outline:'none'}}>{['A4','A3','A2','A1'].map(s=><option key={s}>{s}</option>)}</select>
@@ -2112,11 +2701,47 @@ function App(){
                   <span style={{fontSize:9.5,whiteSpace:'nowrap'}}>Pg {pvPg}/{totalPvPg}</span>
                   <button className="pg-btn" disabled={pvPg===totalPvPg} onClick={()=>setPvPg(p=>p+1)}>›</button>
                 </div>
-                <button className="btn btn-navy btn-sm" onClick={handlePrint}>🖨 Print All</button>
+                <button className="btn btn-navy btn-sm" onClick={handlePrint}>🖨 Print {printSelMode&&selectedForPrint.size>0?`(${selectedForPrint.size})`:'All'}</button>
                 <button className="btn btn-gold btn-sm" onClick={exportPDF}>📄 PDF</button>
                 <button className="btn btn-grn btn-sm" onClick={downloadExcel}>📊 Excel</button>
               </div>
-              {!filtered.length?(
+              {/* Print Filters */}
+              <div className="no-print" style={{background:'#fff',border:'1px solid var(--bdr)',borderRadius:8,padding:'10px 12px',marginBottom:10}}>
+                <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center',marginBottom:8}}>
+                  <span style={{fontSize:9.5,fontWeight:800,color:'#0f3d36',textTransform:'uppercase',letterSpacing:.5}}>🔍 Filter Print</span>
+                  <input placeholder="Search name / ID…" value={printFilter} onChange={e=>{setPrintFilter(e.target.value);setPvPg(1);setSelectedForPrint(new Set());}} style={{flex:1,minWidth:120,border:'1px solid var(--bdr2)',borderRadius:5,padding:'4px 8px',fontSize:10,outline:'none',fontFamily:'Barlow,sans-serif'}}/>
+                  <select value={printDesig} onChange={e=>{setPrintDesig(e.target.value);setPvPg(1);setSelectedForPrint(new Set());}} style={{border:'1px solid var(--bdr2)',borderRadius:5,padding:'4px 8px',fontSize:10,outline:'none',fontFamily:'Barlow,sans-serif',background:'#fff'}}>
+                    <option value="">All Designations</option>
+                    {designations.map(d=><option key={d} value={d}>{d}</option>)}
+                  </select>
+                  <select value={printDept} onChange={e=>{setPrintDept(e.target.value);setPvPg(1);setSelectedForPrint(new Set());}} style={{border:'1px solid var(--bdr2)',borderRadius:5,padding:'4px 8px',fontSize:10,outline:'none',fontFamily:'Barlow,sans-serif',background:'#fff'}}>
+                    <option value="">All Departments</option>
+                    {departments.map(d=><option key={d} value={d}>{d}</option>)}
+                  </select>
+                  {(printFilter||printDesig||printDept)&&<button className="btn btn-ghost btn-sm" onClick={()=>{setPrintFilter('');setPrintDesig('');setPrintDept('');setSelectedForPrint(new Set());}}>✕ Clear</button>}
+                </div>
+                <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+                  <label style={{display:'flex',alignItems:'center',gap:5,fontSize:10,fontWeight:700,color:'#0f3d36',cursor:'pointer'}}>
+                    <label className="tog" style={{margin:0}}><input type="checkbox" checked={printSelMode} onChange={e=>{setPrintSelMode(e.target.checked);setSelectedForPrint(new Set());}}/><span className="tog-sl"/></label>
+                    ☑ Select Mode
+                  </label>
+                  <div style={{display:'flex',alignItems:'center',gap:4,background:'#f0fdfa',border:'1px solid #5eead4',borderRadius:5,padding:'3px 7px'}}>
+                    <span style={{fontSize:9,fontWeight:800,color:'#0f3d36',textTransform:'uppercase',letterSpacing:.3}}>Print Side:</span>
+                    {[['both','Both'],['front','Front Only'],['back','Back Only']].map(([v,lbl])=>(
+                      <button key={v} onClick={()=>setPrintSide(v)} style={{padding:'2px 7px',fontSize:9,fontWeight:700,border:'1px solid',borderColor:printSide===v?'#0f3d36':'var(--bdr2)',background:printSide===v?'#0f3d36':'#fff',color:printSide===v?'#fff':'#0f3d36',borderRadius:4,cursor:'pointer',fontFamily:'Barlow,sans-serif'}}>{lbl}</button>
+                    ))}
+                  </div>
+                  {printSelMode&&<>
+                    <button className="btn btn-grn btn-xs" onClick={()=>setSelectedForPrint(new Set(printFiltered.map(t=>teacherKey(t))))}>✓ Select All ({printFiltered.length})</button>
+                    <button className="btn btn-ghost btn-xs" onClick={()=>setSelectedForPrint(new Set())}>✕ Deselect All</button>
+                    {selectedForPrint.size>0&&<span style={{fontSize:9.5,fontWeight:700,color:'var(--teal)',background:'rgba(15,118,110,.1)',border:'1px solid rgba(15,118,110,.3)',borderRadius:4,padding:'2px 7px'}}>{selectedForPrint.size} selected</span>}
+                  </>}
+                  <span style={{marginLeft:'auto',fontSize:9.5,color:'var(--tx2)',fontWeight:600}}>
+                    {printSelMode&&selectedForPrint.size>0?`${selectedForPrint.size} of ${printFiltered.length} cards`:`${printFiltered.length} cards`} · {Math.ceil((printSelMode&&selectedForPrint.size>0?selectedForPrint.size:printFiltered.length)/CARDS_PP)} pages
+                  </span>
+                </div>
+              </div>
+               {!filtered.length?(
                 <div style={{textAlign:'center',padding:'40px 0',color:'var(--tx2)'}}>
                   <div style={{fontSize:44,marginBottom:9}}>🖨️</div>
                   <div style={{fontFamily:'Barlow Condensed',fontSize:19,fontWeight:800,color:'#0f3d36',marginBottom:9}}>No Cards to Preview</div>
@@ -2131,14 +2756,48 @@ function App(){
                   <div className="preview-zone no-print">
                     <div style={{transformOrigin:'top left',transform:`scale(${zoom})`,width:'794px',display:'inline-block'}}>
                       <div className="preview-page" style={{filter:bw?'grayscale(1)':'none'}}>
-                        {filtered.slice((pvPg-1)*CARDS_PP,pvPg*CARDS_PP).map((t,i)=>{
+                        {printFiltered.slice((pvPg-1)*CARDS_PP,pvPg*CARDS_PP).map((t,i)=>{
                           const key=teacherKey(t);const over=cardOverrides[key]||{};const isAdj=adjTeacher&&teacherKey(adjTeacher)===key;
+                          const isSel=selectedForPrint.has(key);
                           return(
                             <div className="preview-cell" key={i} style={{margin:'3px 4px',position:'relative'}}>
-                              <div className={`card-click-wrap${isAdj?' adj-active':''}`} onClick={e=>{e.stopPropagation();openCardAdj(t,e);}}>
-                                {Object.keys(over).length>0&&<div className="card-override-dot"/>}
-                                <IDCard s={t} cfg={stableCfg} cfgOverride={over} templateImage={activeTemplateImage}/>
-                                <div className="card-select-hint">{isAdj?'✓ Adj':'⚙'}</div>
+  {printSelMode&&(
+    <div 
+      onPointerDown={(e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        setSelectedForPrint(prev => {
+          const n = new Set(prev);
+          if (n.has(key)) n.delete(key);
+          else n.add(key);
+          return n;
+        });
+      }} 
+      style={{position:'absolute',top:-6,left:-6,zIndex:30,width:22,height:22,borderRadius:4,background:isSel?'#0f3d36':'#fff',border:`2px solid ${isSel?'#0f3d36':'#cbd5e1'}`,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',boxShadow:'0 1px 4px rgba(0,0,0,.2)'}}
+    >
+      {isSel&&<span style={{color:'#fff',fontSize:11,fontWeight:900,lineHeight:1}}>✓</span>}
+    </div>
+  )}
+                              <div style={{display:'flex',flexDirection:'column',gap:3,opacity:printSelMode&&!isSel?0.5:1,transition:'opacity .15s'}}>
+                                <div 
+className={`card-click-wrap${isAdj?' adj-active':''}`} 
+onClick={e=>{
+    e.stopPropagation();
+    if(printSelMode){
+        setSelectedForPrint(prev=>{
+            const n = new Set(prev);
+            if(n.has(key)){n.delete(key);}else{n.add(key);}
+            return n;
+        });
+        return;
+    }
+    openCardAdj(t,e);
+}}>
+  {Object.keys(over).length>0&&<div className="card-override-dot"/>}
+  {printSide!=='back'&&<IDCard s={t} cfg={stableCfg} cfgOverride={over} templateImage={activeTemplateImage}/>}
+  {printSide!=='front'&&<IDCardBack s={t} cfg={stableCfg} cfgOverride={over} templateImage={activeBackTemplateImage}/>}
+  <div className="card-select-hint">{printSelMode?(isSel?'✓ Selected':'Click to Select'):(isAdj?'✓ Adj':'⚙')}</div>
+</div>
                               </div>
                             </div>
                           );
@@ -2147,7 +2806,7 @@ function App(){
                     </div>
                   </div>
                   <div id="pdf-src" style={{position:'absolute',left:'-9999px',top:0,pointerEvents:'none'}}>
-                    {Array.from({length:totalPvPg},(_,pi)=>(<PrintPage key={pi} teachers={filtered.slice(pi*CARDS_PP,(pi+1)*CARDS_PP)} cfg={stableCfg} cardOverrides={cardOverrides} bw={bw} templateImage={activeTemplateImage}/>))}
+                    {Array.from({length:Math.ceil(printTeachers.length/CARDS_PP)},(_,pi)=>(<PrintPage key={pi} teachers={printTeachers.slice(pi*CARDS_PP,(pi+1)*CARDS_PP)} cfg={stableCfg} cardOverrides={cardOverrides} bw={bw} templateImage={activeTemplateImage} backTemplateImage={activeBackTemplateImage} printSide={printSide}/>))}
                   </div>
                 </>
               )}
@@ -2158,7 +2817,7 @@ function App(){
       </div>
 
       <div className="print-only" id="print-target">
-        {Array.from({length:totalPvPg},(_,pi)=>(<PrintPage key={pi} teachers={filtered.slice(pi*CARDS_PP,(pi+1)*CARDS_PP)} cfg={stableCfg} cardOverrides={cardOverrides} bw={bw} templateImage={activeTemplateImage}/>))}
+        {Array.from({length:Math.ceil(printTeachers.length/CARDS_PP)},(_,pi)=>(<PrintPage key={pi} teachers={printTeachers.slice(pi*CARDS_PP,(pi+1)*CARDS_PP)} cfg={stableCfg} cardOverrides={cardOverrides} bw={bw} templateImage={activeTemplateImage} backTemplateImage={activeBackTemplateImage} printSide={printSide}/>))}
       </div>
 
       <div style={{background:'#0f3d36',color:'rgba(255,255,255,.6)',textAlign:'center',padding:'5px',fontSize:9.5,flexShrink:0}} className="no-print">
@@ -2185,7 +2844,7 @@ function App(){
                 <button className="btn btn-teal btn-sm" onClick={()=>adjPhotoRef.current.click()}>📷 Upload Photo</button>
                 <input ref={adjPhotoRef} type="file" accept="image/*" style={{display:'none'}} onChange={e=>{if(e.target.files[0])handleEditPhotoUpload(e.target.files[0]);}}/>
               </div>
-              {[['NAME','Full Name'],['EMPLOYEE_ID','Employee ID'],['DESIGNATION','Designation'],['DEPARTMENT','Department'],['BLOOD_GROUP','Blood Group'],['DATE_OF_JOINING','Date of Joining'],['PHONE_NO','Phone No.'],['EMAIL','Email'],['ADDRESS','Address'],['SESSION','Session']].map(([k,lbl])=>(
+              {[['NAME','Full Name'],['EMPLOYEE_ID','Employee ID'],['DESIGNATION','Designation'],['DEPARTMENT','Department'],['BLOOD_GROUP','Blood Group'],['DATE_OF_JOINING','Date of Joining'],['PHONE_NO','Phone No.'],['EMAIL','Email'],['ADDRESS','Address'],['SESSION','Session'],['FATHER_NAME',"Father's Name"],['PERM_ADDRESS','Permanent Address'],['CORR_ADDRESS','Correspondence Address']].map(([k,lbl])=>(
                 <div key={k} style={{marginBottom:6}}>
                   <label style={{fontSize:9.5,fontWeight:700,color:'var(--tx2)',textTransform:'uppercase',letterSpacing:.3,display:'block',marginBottom:2}}>{lbl}</label>
                   <input type="text" value={editTeacher[k]||''} onChange={e=>setEditTeacher(et=>({...et,[k]:e.target.value}))} style={{width:'100%',border:'1px solid var(--bdr2)',borderRadius:5,padding:'5px 9px',fontSize:11,outline:'none',fontFamily:'Barlow,sans-serif'}}/>
@@ -2247,5 +2906,3 @@ window.addEventListener('message',function(e){
 </script>
 </body>
 </html>
-
-
