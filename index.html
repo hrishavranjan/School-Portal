@@ -459,6 +459,7 @@ const auth = firebase.auth();
 const db   = firebase.firestore();
 
 let currentUser  = null;
+let currentViewer = null;
 let timerInterval = null;
 const IDLE_MINUTES = 15;
 
@@ -503,9 +504,85 @@ function showLogin(){
   document.body.style.alignItems='center';
   document.body.style.justifyContent='center';
   stopAutoLogout();
+  setLoading(false);
 }
 
 async function enterPortal(user){
+
+  // ── SUPER ADMIN CHECK — block & redirect to super admin portal ──
+  const SUPER_ADMINS = ['hrishavranjan2003@gmail.com'];
+  if(SUPER_ADMINS.includes(user.email)){
+    await auth.signOut();
+    showLogin();
+    showMsg('⚠️ Super Admin accounts must use the Super Admin Portal.','error');
+    setTimeout(()=>{
+      window.location.href = 'admin/admin.html'; // 👈 change this to your actual super admin portal URL
+    }, 2000);
+    return;
+  }
+
+  // ── Check schools collection — if this email is a school admin ──
+  try{
+    const adminSnap=await db.collection('schools').where('adminEmail','==',user.email).limit(1).get();
+    if(!adminSnap.empty){
+      // This is a school admin — go straight to normal admin flow
+      document.getElementById('loginPage').style.display='none';
+      document.getElementById('portal').classList.add('active');
+      document.body.style.display='block';
+      const ini=(user.displayName||user.email||'?')[0].toUpperCase();
+      document.getElementById('profileInitial').textContent=ini;
+      document.getElementById('welcomeName').textContent=user.displayName||user.email.split('@')[0];
+      document.getElementById('menuName').textContent=user.displayName||'Admin';
+      document.getElementById('menuEmail').textContent=user.email;
+      startAutoLogout();
+      showDashboard();
+      loadDashboardStats();
+      return;
+    }
+  }catch(e){console.warn('Admin check error',e);}
+
+  // Check if this user is a viewer
+  try{
+    const vSnap=await db.collection('viewers').where('email','==',user.email).get();
+    if(!vSnap.empty){
+      const viewer=vSnap.docs[0].data();
+      if(viewer.active===false){
+        await auth.signOut();
+        showLogin();
+        showMsg('Your viewer access has been suspended. Contact your administrator.','error');
+        return;
+      }
+      document.getElementById('loginPage').style.display='none';
+      document.getElementById('portal').classList.add('active');
+      document.body.style.display='block';
+      const ini=(user.email||'?')[0].toUpperCase();
+      document.getElementById('profileInitial').textContent=ini;
+      document.getElementById('menuName').textContent='Viewer';
+      document.getElementById('menuEmail').textContent=user.email;
+      document.getElementById('timerPill').style.display='none';
+      currentViewer=viewer;
+      window._viewerAdminEmailPromise=viewer.schoolId
+        ?db.collection('schools').doc(viewer.schoolId).get()
+            .then(snap=>snap.exists?(snap.data().adminEmail||''):'')
+            .catch(()=>'')
+        :Promise.resolve('');
+      startAutoLogout();
+      enterViewerMode(viewer);
+      return;
+    }
+  }catch(e){console.warn('Viewer check error',e);}
+
+  // Normal admin flow — verify this email is actually a school admin
+  try{
+    const adminCheck=await db.collection('schools').where('adminEmail','==',user.email).limit(1).get();
+    if(adminCheck.empty){
+      await auth.signOut();
+      showLogin();
+      showMsg('Access denied. Your account has been removed or is not registered.','error');
+      return;
+    }
+  }catch(e){console.warn('Final admin check error',e);}
+
   document.getElementById('loginPage').style.display='none';
   document.getElementById('portal').classList.add('active');
   document.body.style.display='block';
@@ -518,6 +595,7 @@ async function enterPortal(user){
   showDashboard();
   loadDashboardStats();
 }
+  
 
 /* ── DASHBOARD ── */
 function showDashboard(){
@@ -527,15 +605,79 @@ function showDashboard(){
   document.getElementById('studioIframeWrap').innerHTML='';
 }
 
+/* ── VIEWER MODE ── */
+function enterViewerMode(viewer){
+  const hasStudent=viewer.allowStudent!==false;
+  const hasTeacher=viewer.allowTeacher!==false;
+
+  if(!hasStudent&&!hasTeacher){
+    // No access at all
+    document.getElementById('dashboardView').classList.add('active');
+    document.getElementById('topbarSubtitle').textContent='No Access';
+    document.getElementById('dashboardView').innerHTML=`
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px">
+        <div style="font-size:64px">🚫</div>
+        <div style="font-family:'Syne',sans-serif;font-size:22px;font-weight:800;color:#fff">No Studio Access</div>
+        <div style="font-size:13px;color:rgba(255,255,255,.4)">Contact your administrator to enable access.</div>
+        <button onclick="doLogout()" style="padding:10px 24px;border-radius:9px;border:none;background:#ef4444;color:#fff;font-weight:700;cursor:pointer;font-size:13px;font-family:'Space Grotesk',sans-serif">Logout</button>
+      </div>`;
+    return;
+  }
+
+  if(hasStudent&&hasTeacher){
+    // Both allowed — show a minimal picker
+    document.getElementById('dashboardView').classList.add('active');
+    document.getElementById('studioPanel').classList.remove('active');
+    document.getElementById('topbarSubtitle').textContent='Print Access';
+    document.getElementById('dashboardView').innerHTML=`
+      <div style="position:relative;z-index:1;padding:32px 28px">
+        <div style="display:inline-flex;align-items:center;gap:6px;background:rgba(20,184,166,.1);border:1px solid rgba(20,184,166,.25);border-radius:20px;padding:4px 14px;font-size:10px;font-weight:700;color:#14b8a6;margin-bottom:16px;letter-spacing:.5px">👁 VIEWER — PRINT ONLY</div>
+        <div style="font-family:'Syne',sans-serif;font-size:26px;font-weight:800;color:#fff;margin-bottom:6px">Select Studio to Print</div>
+        <div style="font-size:13px;color:rgba(255,255,255,.38);margin-bottom:28px">You have print-only access. Editing and uploading are disabled.</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px;max-width:580px">
+          <div onclick="openViewerStudio('student')" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:22px;cursor:pointer;transition:all .2s" onmouseover="this.style.borderColor='rgba(59,130,246,.4)';this.style.transform='translateY(-3px)'" onmouseout="this.style.borderColor='rgba(255,255,255,.08)';this.style.transform='none'">
+            <div style="width:50px;height:50px;border-radius:12px;background:rgba(37,99,235,.15);border:1px solid rgba(59,130,246,.2);display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:12px">🎓</div>
+            <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:800;color:#fff;margin-bottom:4px">Student ID‑Card Studio</div>
+            <div style="font-size:11px;color:rgba(255,255,255,.38);margin-bottom:12px">Print student identity cards</div>
+            <div style="display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;color:#34d399"><span style="width:6px;height:6px;border-radius:50%;background:#10b981;display:inline-block"></span>Print Access</div>
+          </div>
+          <div onclick="openViewerStudio('teacher')" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:22px;cursor:pointer;transition:all .2s" onmouseover="this.style.borderColor='rgba(20,184,166,.4)';this.style.transform='translateY(-3px)'" onmouseout="this.style.borderColor='rgba(255,255,255,.08)';this.style.transform='none'">
+            <div style="width:50px;height:50px;border-radius:12px;background:rgba(15,118,110,.15);border:1px solid rgba(20,184,166,.2);display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:12px">👩‍🏫</div>
+            <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:800;color:#fff;margin-bottom:4px">Teacher ID‑Card Studio</div>
+            <div style="font-size:11px;color:rgba(255,255,255,.38);margin-bottom:12px">Print teacher identity cards</div>
+            <div style="display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;color:#34d399"><span style="width:6px;height:6px;border-radius:50%;background:#10b981;display:inline-block"></span>Print Access</div>
+          </div>
+        </div>
+      </div>
+      <div class="credit-bar">Designed by <strong>Hrishav Ranjan</strong> &nbsp;❤️&nbsp; © 2026 · School Portal Suite</div>`;
+    return;
+  }
+
+  // Only one studio allowed — open it directly on print tab
+  openViewerStudio(hasStudent?'student':'teacher');
+}
+
+function openViewerStudio(type){
+  window._viewerPrintOnly=true;
+  window._viewerSchoolId=currentViewer?currentViewer.schoolId:null;
+  openStudio(type);
+}
+
 function goToDashboard(){
   closeProfileMenu();
-  showDashboard();
   const bar=document.getElementById('studioTabsBar');
   bar.innerHTML='';
   bar.classList.remove('visible');
   if(window._studioMsgHandler){
     window.removeEventListener('message',window._studioMsgHandler);
     window._studioMsgHandler=null;
+  }
+  document.getElementById('studioIframeWrap').innerHTML='';
+  // If viewer, show viewer dashboard instead of admin dashboard
+  if(currentViewer){
+    enterViewerMode(currentViewer);
+  } else {
+    showDashboard();
   }
 }
 
@@ -654,11 +796,16 @@ function openStudio(type){
     if(loader)loader.style.display='none';
     iframe.style.display='block';
     // Send admin email immediately on iframe load so it's ready before school creation
-    iframe.contentWindow.postMessage({
-      type:'setAdminEmail',
-      email: currentUser?.email||'',
-      singleSchoolMode: true
-    },'*');
+    // For viewers, we need to send the admin email that owns their school
+    // We'll look it up from Firestore or send schoolId directly
+    (window._viewerAdminEmailPromise || Promise.resolve(currentUser?.email||'')).then(adminEmail=>{
+  iframe.contentWindow.postMessage({
+    type:'setAdminEmail',
+    email: adminEmail || currentUser?.email||'',
+    singleSchoolMode: true,
+    viewerMode: !!window._viewerSchoolId
+  },'*');
+});
   };
   if(window._studioMsgHandler){
     window.removeEventListener('message',window._studioMsgHandler);
@@ -706,6 +853,21 @@ function openStudio(type){
       if(k==='upload')btn.classList.add('active');
       bar.appendChild(btn);
     });
+
+    // If viewer print-only mode: hide all tabs except print, auto-click print
+    if(window._viewerPrintOnly){
+      window._viewerPrintOnly=false;
+      setTimeout(()=>{
+        bar.querySelectorAll('.studio-tab-btn').forEach(btn=>{
+          if(btn.textContent.includes('🖨️')||btn.textContent.includes('Print')){
+            btn.click();
+            btn.style.display='none'; // hide the tab button itself too — they're already on print
+          } else if(btn.classList.contains('studio-tab-btn')){
+            btn.style.display='none'; // hide upload, students/teachers, designer tabs
+          }
+        });
+      },400);
+    }
   }
 };
   
@@ -761,6 +923,9 @@ async function doForgotInline(e){
 
 async function doLogout(){
   closeProfileMenu();stopAutoLogout();
+  currentViewer=null;
+  window._viewerSchoolId=null;
+  window._viewerPrintOnly=false;
   await auth.signOut();showLogin();
 }
 

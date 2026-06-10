@@ -1518,14 +1518,28 @@ function App(){
 
   useEffect(()=>{hideLoader();},[]);
   useEffect(()=>{
-  const handler=(e)=>{
-    if(e.data&&e.data.type==='switchTab'){
-      setTab(e.data.tab);
-    }
-  };
-  window.addEventListener('message',handler);
-  return()=>window.removeEventListener('message',handler);
-},[]);
+    const handler=(e)=>{
+      if(e.data&&e.data.type==='switchTab'){
+        setTab(e.data.tab);
+      }
+    };
+    window.addEventListener('message',handler);
+    return()=>window.removeEventListener('message',handler);
+  },[]);
+
+  // Viewer auto-load teachers then switch to print
+  useEffect(()=>{
+    const handler=(e)=>{
+      const d=e.detail?.teachers||[];
+      if(d.length){
+        setTeachers(d.map(x=>({...x,_ok:true,_issues:[]})));
+        setFbCount(d.length);
+        setTab('preview');
+      }
+    };
+    document.addEventListener('viewerAutoLoad',handler);
+    return()=>document.removeEventListener('viewerAutoLoad',handler);
+  },[]);
 
   const set=useCallback((k,v)=>{
     if(!activeSchool)return;
@@ -1573,9 +1587,10 @@ function App(){
 
   useEffect(()=>{
     const handler=(e)=>{
-      const{email,schools,singleSchoolMode}=e.detail;
+      const{email,schools,singleSchoolMode,viewerMode}=e.detail;
       window._adminEmail=email;
       window._singleSchoolMode=singleSchoolMode===true;
+      window._viewerMode=viewerMode===true;
       if(schools&&schools.length){
         setSchools(schools.map(s=>({
           id:s.id,name:s.name,sessions:s.sessions||[],
@@ -1659,6 +1674,20 @@ function App(){
     setTimeout(()=>loadSchoolData(schoolId,session),600);
     /* tell parent portal: setup is done, show tabs */
     window.parent.postMessage({type:'studioReady'},'*');
+    // If viewer mode: auto-load Firebase teachers and go to print tab
+    if(window._viewerMode){
+      setTimeout(async()=>{
+        if(window.fbLoad&&window._fbReady){
+          try{
+            const d=await window.fbLoad(schoolId,session);
+            if(d.length){
+              // dispatch a custom event React can pick up
+              document.dispatchEvent(new CustomEvent('viewerAutoLoad',{detail:{teachers:d}}));
+            }
+          }catch(e){console.warn('Viewer auto-load failed',e);}
+        }
+      },800);
+    }
   },[schools,loadSchoolData]);
   
   useEffect(()=>{if(fbOk&&activeSchool&&activeSession)loadSchoolData(activeSchool,activeSession);},[fbOk,activeSchool,activeSession,loadSchoolData]);
@@ -1835,7 +1864,7 @@ function App(){
     try{
       const d=await window.fbLoad(activeSchool,activeSession);
       if(!d.length){showToast('No teachers found for this school/session','w');}
-      else{setTeachers(d.map(x=>({...x,_ok:true,_issues:[]})));showToast(`Loaded ${d.length} teachers ☁️`,'s');setTab('teachers');setFbCount(d.length);}
+      else{setTeachers(d.map(x=>({...x,_ok:true,_issues:[]})));showToast(`Loaded ${d.length} teachers ☁️`,'s');setTab(window._viewerMode?'preview':'teachers');setFbCount(d.length);}
     }catch(e){showToast('Load failed: '+e.message,'e');}
     setIsLoadFB(false);
   };
@@ -2539,20 +2568,20 @@ function App(){
         <select className="ctx-sel" value={activeSession||''} onChange={e=>{const ses=e.target.value;setActiveSession(ses);setTeachers([]);setCardOverrides({});if(activeSchool)loadSchoolData(activeSchool,ses);}}>{(schools.find(s=>s.id===activeSchool)?.sessions||[]).map(s=><option key={s} value={s}>{s}</option>)}</select>
         <span style={{fontSize:8,color:'rgba(255,255,255,.4)',marginLeft:4}}>|</span>
         <button className="ctx-btn" onClick={()=>setShowSetup(true)}>⚙ Schools</button>
-        <div style={{marginLeft:'auto',display:'flex',gap:6,alignItems:'center'}}>
-          <div className={`fb-dot ${fbDotClass}`}/><span style={{fontSize:9,color:fbStatusColor,fontWeight:700}}>FB: {fbStatusLabel}</span>
-          {fbOk&&<span style={{fontSize:9,color:'rgba(255,255,255,.45)',fontWeight:600}}>{fbCount} teachers</span>}
-          {cloudinaryConfigured&&<span className="ctx-badge">🌤️ CDN</span>}
-        </div>
-        <div className="fb-acts">
-          {teachers.length>0&&<button className="fb-btn fb-g" onClick={handleSaveFB} disabled={isSaving||!fbOk}>{isSaving?'Saving…':'☁️ Save'}</button>}
-          <button className="fb-btn fb-b" onClick={handleLoadFB} disabled={isLoadFB||!fbOk}>{isLoadFB?'Loading…':'📥 Load'}</button>
-          {fbOk&&fbCount>0&&<button className="fb-btn fb-r" onClick={()=>setShowClearCloud(true)}>🗑</button>}
-        </div>
+        {!window._viewerMode&&<div style={{marginLeft:'auto',display:'flex',gap:6,alignItems:'center'}}>
+  <div className={`fb-dot ${fbDotClass}`}/><span style={{fontSize:9,color:fbStatusColor,fontWeight:700}}>FB: {fbStatusLabel}</span>
+  {fbOk&&<span style={{fontSize:9,color:'rgba(255,255,255,.45)',fontWeight:600}}>{fbCount} teachers</span>}
+  {cloudinaryConfigured&&<span className="ctx-badge">🌤️ CDN</span>}
+</div>}
+        {!window._viewerMode&&<div className="fb-acts">
+  {teachers.length>0&&<button className="fb-btn fb-g" onClick={handleSaveFB} disabled={isSaving||!fbOk}>{isSaving?'Saving…':'☁️ Save'}</button>}
+  <button className="fb-btn fb-b" onClick={handleLoadFB} disabled={isLoadFB||!fbOk}>{isLoadFB?'Loading…':'📥 Load'}</button>
+  {fbOk&&fbCount>0&&<button className="fb-btn fb-r" onClick={()=>setShowClearCloud(true)}>🗑</button>}
+</div>}
       </div>
 
       <div className="app-body">
-        {sidebar}
+        {!window._viewerMode&&sidebar}
         <div className="main">
           <div className="content">
             {tab==='upload'&&(<div>
@@ -2584,7 +2613,7 @@ function App(){
             {tab==='teachers'&&(<div>
               <div className="page-title">Teacher Records</div>
               <div style={{fontSize:10,color:'var(--tx2)',marginBottom:8}}>School: <strong>{currentSchool?.name||'—'}</strong> · Session: <strong>{activeSession||'—'}</strong> · {teachers.length} teachers</div>
-              <div style={{display:'flex',gap:5,marginBottom:9,flexWrap:'wrap',alignItems:'center'}}>
+              {!window._viewerMode&&<div style={{display:'flex',gap:5,marginBottom:9,flexWrap:'wrap',alignItems:'center'}}>
                 <button className="btn btn-teal btn-sm" onClick={handleSaveFB} disabled={isSaving||!teachers.length||!fbOk}>{isSaving?'Saving…':'☁️ Save to Firebase'}</button>
                 <button className="btn btn-ghost btn-sm" onClick={handleLoadFB} disabled={isLoadFB||!fbOk}>{isLoadFB?'Loading…':'📥 Load from Firebase'}</button>
                 <button className="btn btn-grn btn-sm" onClick={downloadExcel}>📊 Download Excel</button>
@@ -2593,7 +2622,7 @@ function App(){
                 <label style={{display:'flex',alignItems:'center',gap:5,fontSize:10,fontWeight:700,color:'#0f3d36',cursor:'pointer'}}>
                   <label className="tog" style={{margin:0}}><input type="checkbox" checked={editMode} onChange={e=>setEditMode(e.target.checked)}/><span className="tog-sl"/></label>✏️ Edit Mode
                 </label>
-              </div>
+              </div>}
               {showBulkPhoto&&teachers.length>0&&(<BulkPhotoUpload teachers={teachers} fbOk={fbOk} activeSchool={activeSchool} activeSession={activeSession} onPhotosUploaded={(updated)=>{setTeachers(updated);setShowBulkPhoto(false);}}/>)}
               <div className="filter-bar">
                 <input placeholder="🔍 Search name, ID, designation…" value={search} onChange={e=>{setSearch(e.target.value);setPg(1);}}/>
@@ -2623,8 +2652,8 @@ function App(){
                         {t.PHOTO&&t.PHOTO.startsWith('https://')&&<span className="badge badge-o">🌤️ CDN</span>}
                         <div style={{marginTop:5,display:'flex',gap:3,flexWrap:'wrap'}}>
                           <button className="btn btn-ghost btn-xs" onClick={e=>{e.stopPropagation();setVerifyTeacher(t);}}>🔍 Preview</button>
-                          <button className="btn btn-blue btn-xs" onClick={e=>{e.stopPropagation();setEditTeacher({...t});}}>✏️ Edit</button>
-                          <button className="btn btn-purple btn-xs" onClick={e=>{e.stopPropagation();openCardAdj(t,e);}}>⚙ Adjust</button>
+                          {!window._viewerMode&&<button className="btn btn-blue btn-xs" onClick={e=>{e.stopPropagation();setEditTeacher({...t});}}>✏️ Edit</button>}
+                          {!window._viewerMode&&<button className="btn btn-purple btn-xs" onClick={e=>{e.stopPropagation();openCardAdj(t,e);}}>⚙ Adjust</button>}
                         </div>
                       </div>
                     ))}
@@ -2875,6 +2904,8 @@ window.addEventListener('message',function(e){
     window._adminEmail=newEmail;
     window._adminEmailReady=true;
     window._singleSchoolMode=e.data.singleSchoolMode===true;
+    // ── VIEWER MODE FLAG ──
+    window._viewerMode=e.data.viewerMode===true;
     const tryLoad=()=>{
       if(window.fbLoadSchools&&window._fbReady){
         window.fbLoadSchools(window._adminEmail).then(function(schools){
@@ -2886,7 +2917,12 @@ window.addEventListener('message',function(e){
             });
           }
           document.dispatchEvent(new CustomEvent('adminEmailReady',{
-            detail:{email:window._adminEmail,schools:schools||[],singleSchoolMode:window._singleSchoolMode}
+            detail:{
+              email:window._adminEmail,
+              schools:schools||[],
+              singleSchoolMode:window._singleSchoolMode,
+              viewerMode:window._viewerMode
+            }
           }));
         });
       } else {
@@ -2896,6 +2932,7 @@ window.addEventListener('message',function(e){
     tryLoad();
   }
 });
+    
 </script>
 </body>
 </html>

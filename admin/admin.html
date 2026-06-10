@@ -1,0 +1,1711 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Super Admin — ID Card Studio Suite</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Space+Grotesk:wght@300;400;500;600;700&family=Barlow+Condensed:wght@600;700;800;900&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<style>
+/* ═══════════════════════════════════════════
+   RESET & TOKENS
+═══════════════════════════════════════════ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --ink:#07090f;
+  --ink2:#0d1120;
+  --ink3:#111827;
+  --teal:#0f766e;
+  --teal-l:#14b8a6;
+  --teal-glow:rgba(20,184,166,.28);
+  --gold:#c9a227;
+  --red:#ef4444;
+  --grn:#10b981;
+  --blue:#3b82f6;
+  --purple:#8b5cf6;
+  --card:rgba(255,255,255,.04);
+  --border:rgba(255,255,255,.08);
+  --border2:rgba(255,255,255,.13);
+  --tx:#ffffff;
+  --tx2:rgba(255,255,255,.55);
+  --tx3:rgba(255,255,255,.28);
+  --radius:14px;
+  --sidebar:260px;
+}
+html,body{height:100%;overflow:hidden}
+body{font-family:'Space Grotesk',sans-serif;background:var(--ink);color:var(--tx);display:flex;flex-direction:column}
+
+/* scrollbars */
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(20,184,166,.3);border-radius:2px}
+
+/* ═══════════════════════════════════════════
+   LOADING OVERLAY
+═══════════════════════════════════════════ */
+#loadOv{position:fixed;inset:0;z-index:9999;background:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;transition:opacity .4s}
+#loadOv.hidden{opacity:0;pointer-events:none}
+.ring{width:60px;height:60px;position:relative}
+.ring-o{width:60px;height:60px;border-radius:50%;border:2.5px solid rgba(20,184,166,.12);border-top-color:var(--teal-l);animation:spin .8s linear infinite}
+.ring-i{position:absolute;inset:12px;border-radius:50%;border:2px solid rgba(20,184,166,.08);border-bottom-color:var(--teal);animation:spin .6s linear infinite reverse}
+@keyframes spin{to{transform:rotate(360deg)}}
+.load-label{font-size:11px;color:var(--tx3);letter-spacing:1.4px;text-transform:uppercase;animation:blink 1.4s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:.3}50%{opacity:.9}}
+
+/* ═══════════════════════════════════════════
+   LOGIN PAGE
+═══════════════════════════════════════════ */
+#loginWrap{display:none;position:fixed;inset:0;z-index:100;background:var(--ink);align-items:center;justify-content:center;padding:16px}
+#loginWrap.show{display:flex}
+.login-box{width:100%;max-width:400px;background:rgba(13,17,32,.9);backdrop-filter:blur(28px);border:1px solid var(--border2);border-radius:22px;padding:32px 28px;box-shadow:0 0 0 1px rgba(20,184,166,.09),0 24px 70px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.06);animation:pop-in .55s cubic-bezier(.175,.885,.32,1.275) both}
+@keyframes pop-in{from{opacity:0;transform:translateY(28px) scale(.97)}to{opacity:1;transform:none}}
+.login-icon{width:58px;height:58px;margin:0 auto 14px;background:linear-gradient(135deg,#0f3d36,var(--teal));border-radius:15px;display:flex;align-items:center;justify-content:center;font-size:26px;box-shadow:0 6px 22px var(--teal-glow)}
+.login-title{font-family:'Syne',sans-serif;font-size:21px;font-weight:800;text-align:center;margin-bottom:4px}
+.login-sub{text-align:center;font-size:11px;color:var(--tx3);letter-spacing:1px;text-transform:uppercase;margin-bottom:22px}
+.badge-superadmin{display:inline-flex;align-items:center;gap:5px;background:rgba(201,162,39,.1);border:1px solid rgba(201,162,39,.22);border-radius:20px;padding:4px 12px;font-size:10px;font-weight:700;color:var(--gold);margin:0 auto 20px;display:block;text-align:center;width:fit-content}
+.inp-grp{margin-bottom:13px}
+.inp-grp label{display:block;font-size:10px;font-weight:600;color:var(--tx3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:5px}
+.inp-wrap{position:relative}
+.inp-ico{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--tx3);pointer-events:none;font-size:14px}
+.inp{width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);border-radius:10px;padding:11px 11px 11px 38px;font-family:'Space Grotesk',sans-serif;font-size:13.5px;font-weight:500;color:#fff;outline:none;transition:all .2s}
+.inp:focus{border-color:var(--teal-l);background:rgba(20,184,166,.05);box-shadow:0 0 0 3px rgba(20,184,166,.12)}
+.inp::placeholder{color:rgba(255,255,255,.17)}
+.pw-toggle{position:absolute;right:11px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--tx3);padding:4px;transition:color .2s;font-size:14px}
+.pw-toggle:hover{color:var(--teal-l)}
+.btn-login{width:100%;padding:13px;border:none;border-radius:10px;background:linear-gradient(135deg,#0f3d36,var(--teal),var(--teal-l));background-size:200%;background-position:100%;cursor:pointer;font-family:'Syne',sans-serif;font-size:14px;font-weight:700;color:#fff;transition:background-position .4s,transform .15s,box-shadow .2s;box-shadow:0 4px 18px var(--teal-glow);margin-top:4px}
+.btn-login:hover{background-position:0;transform:translateY(-1px)}
+.btn-login:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.msg-box{border-radius:9px;padding:9px 13px;font-size:12px;font-weight:600;margin-bottom:12px;display:none;animation:msg-in .2s ease;line-height:1.5}
+@keyframes msg-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.msg-box.err{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);color:#fca5a5}
+.msg-box.ok{background:rgba(20,184,166,.1);border:1px solid rgba(20,184,166,.25);color:#5eead4}
+.msg-box.warn{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.25);color:#fbbf24}
+
+/* ═══════════════════════════════════════════
+   APP SHELL
+═══════════════════════════════════════════ */
+#app{display:none;flex:1;overflow:hidden;flex-direction:column}
+#app.show{display:flex}
+
+/* ─ TOPBAR ─ */
+.topbar{height:54px;flex-shrink:0;background:rgba(7,9,15,.92);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 18px;gap:12px;z-index:50}
+.tb-brand{display:flex;align-items:center;gap:9px;cursor:default}
+.tb-logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,#0f3d36,var(--teal));display:flex;align-items:center;justify-content:center;font-size:15px}
+.tb-name{font-family:'Syne',sans-serif;font-size:15px;font-weight:700}
+.tb-sub{font-size:10px;color:var(--tx3)}
+.tb-sep{width:1px;height:28px;background:var(--border);margin:0 4px}
+.tb-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.profile-area{position:relative}
+.profile-btn{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#0f3d36,var(--teal));border:2px solid rgba(20,184,166,.3);cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-size:12px;font-weight:700;color:#fff;transition:transform .2s}
+.profile-btn:hover{transform:scale(1.08)}
+.profile-menu{position:absolute;top:42px;right:0;z-index:200;background:rgba(10,14,28,.98);backdrop-filter:blur(20px);border:1px solid var(--border2);border-radius:13px;min-width:190px;box-shadow:0 12px 40px rgba(0,0,0,.6);overflow:hidden;display:none}
+.profile-menu.open{display:block;animation:menu-drop .2s cubic-bezier(.175,.885,.32,1.275)}
+@keyframes menu-drop{from{opacity:0;transform:translateY(-6px) scale(.96)}to{opacity:1;transform:none}}
+.pm-head{padding:12px 14px 9px;border-bottom:1px solid var(--border)}
+.pm-head-name{font-size:12px;font-weight:600;color:#fff}
+.pm-head-email{font-size:10.5px;color:var(--tx3);margin-top:1px;word-break:break-all}
+.pm-item{display:flex;align-items:center;gap:8px;padding:9px 14px;font-size:12.5px;font-weight:500;color:var(--tx2);cursor:pointer;border:none;background:none;width:100%;text-align:left;transition:background .15s,color .15s}
+.pm-item:hover{background:rgba(255,255,255,.05);color:#fff}
+.pm-item.danger:hover{background:rgba(239,68,68,.07);color:#fca5a5}
+
+/* ─ MAIN LAYOUT ─ */
+.app-body{display:flex;flex:1;overflow:hidden}
+
+/* ─ SIDEBAR ─ */
+.sidebar{width:var(--sidebar);min-width:var(--sidebar);background:rgba(10,13,22,.7);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.sb-hdr{padding:16px 16px 10px;flex-shrink:0}
+.sb-hdr-label{font-size:9px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px}
+.sb-nav{flex:1;overflow-y:auto;padding:0 10px 12px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:9px;cursor:pointer;font-size:13px;font-weight:500;color:var(--tx2);transition:all .15s;margin-bottom:2px;border:none;background:none;width:100%;text-align:left}
+.nav-item:hover{background:rgba(255,255,255,.05);color:#fff}
+.nav-item.active{background:rgba(20,184,166,.12);color:var(--teal-l);border:1px solid rgba(20,184,166,.18)}
+.nav-item .ni-icon{font-size:16px;width:20px;text-align:center;flex-shrink:0}
+.nav-item .ni-badge{margin-left:auto;background:rgba(20,184,166,.15);color:var(--teal-l);font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;min-width:22px;text-align:center}
+.nav-item.active .ni-badge{background:rgba(20,184,166,.25)}
+.nav-section-label{font-size:9px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.8px;padding:10px 12px 5px;margin-top:4px}
+.sb-footer{padding:12px;border-top:1px solid var(--border);flex-shrink:0}
+.sb-footer-txt{font-size:9.5px;color:var(--tx3);text-align:center;line-height:1.6}
+.sb-footer-txt strong{color:rgba(255,255,255,.35)}
+
+/* ─ CONTENT ─ */
+.content{flex:1;overflow-y:auto;padding:24px}
+
+/* ═══════════════════════════════════════════
+   SHARED COMPONENTS
+═══════════════════════════════════════════ */
+.page-hdr{display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap}
+.page-title{font-family:'Syne',sans-serif;font-size:22px;font-weight:800}
+.page-sub{font-size:11px;color:var(--tx3);margin-top:2px}
+.page-actions{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+.card-title{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.card-title .ct-icon{font-size:18px}
+
+/* stats */
+.stats-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:22px}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;position:relative;overflow:hidden;transition:border-color .2s}
+.stat:hover{border-color:rgba(20,184,166,.25)}
+.stat::before{content:'';position:absolute;inset:0;opacity:0;transition:opacity .2s}
+.stat:hover::before{opacity:1}
+.stat-icon{font-size:22px;margin-bottom:8px;display:block}
+.stat-val{font-family:'Syne',sans-serif;font-size:28px;font-weight:800;color:#fff;line-height:1}
+.stat-lbl{font-size:9.5px;color:var(--tx3);text-transform:uppercase;letter-spacing:.5px;margin-top:4px}
+.stat.teal::before{background:linear-gradient(135deg,rgba(20,184,166,.07),transparent)}
+.stat.gold::before{background:linear-gradient(135deg,rgba(201,162,39,.07),transparent)}
+.stat.blue::before{background:linear-gradient(135deg,rgba(59,130,246,.07),transparent)}
+.stat.red::before{background:linear-gradient(135deg,rgba(239,68,68,.07),transparent)}
+
+/* table */
+.tbl-wrap{overflow-x:auto;border-radius:10px;border:1px solid var(--border)}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+thead tr{background:rgba(255,255,255,.04)}
+th{padding:10px 14px;text-align:left;font-size:10px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.6px;white-space:nowrap;border-bottom:1px solid var(--border)}
+td{padding:11px 14px;border-bottom:1px solid rgba(255,255,255,.04);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tbody tr{transition:background .12s}
+tbody tr:hover{background:rgba(255,255,255,.025)}
+
+/* badges */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:.3px;white-space:nowrap}
+.badge-grn{background:rgba(16,185,129,.12);color:#34d399;border:1px solid rgba(16,185,129,.2)}
+.badge-red{background:rgba(239,68,68,.1);color:#fca5a5;border:1px solid rgba(239,68,68,.18)}
+.badge-gold{background:rgba(201,162,39,.12);color:var(--gold);border:1px solid rgba(201,162,39,.22)}
+.badge-teal{background:rgba(20,184,166,.12);color:#5eead4;border:1px solid rgba(20,184,166,.2)}
+.badge-blue{background:rgba(59,130,246,.12);color:#93c5fd;border:1px solid rgba(59,130,246,.2)}
+.badge-gray{background:rgba(255,255,255,.06);color:var(--tx2);border:1px solid var(--border)}
+.badge-dot{width:5px;height:5px;border-radius:50%;background:currentColor}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 15px;border-radius:8px;font-family:'Space Grotesk',sans-serif;font-size:12px;font-weight:600;cursor:pointer;border:1px solid transparent;transition:all .15s;white-space:nowrap}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-teal{background:linear-gradient(135deg,#0f3d36,var(--teal));color:#fff;box-shadow:0 3px 12px var(--teal-glow)}
+.btn-teal:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 5px 18px rgba(20,184,166,.38)}
+.btn-gold{background:linear-gradient(135deg,#7a5b10,var(--gold));color:#fff;box-shadow:0 3px 12px rgba(201,162,39,.25)}
+.btn-gold:hover:not(:disabled){transform:translateY(-1px)}
+.btn-red{background:rgba(239,68,68,.1);color:#fca5a5;border-color:rgba(239,68,68,.2)}
+.btn-red:hover:not(:disabled){background:rgba(239,68,68,.18)}
+.btn-ghost{background:rgba(255,255,255,.05);color:var(--tx2);border-color:var(--border)}
+.btn-ghost:hover:not(:disabled){background:rgba(255,255,255,.09);color:#fff}
+.btn-grn{background:rgba(16,185,129,.12);color:#34d399;border-color:rgba(16,185,129,.22)}
+.btn-grn:hover:not(:disabled){background:rgba(16,185,129,.22)}
+.btn-sm{padding:5px 11px;font-size:11px}
+.btn-xs{padding:3px 8px;font-size:10px}
+
+/* form */
+.form-row{margin-bottom:14px}
+.form-label{display:block;font-size:10px;font-weight:600;color:var(--tx3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:5px}
+.form-input{width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);border-radius:9px;padding:10px 12px;font-family:'Space Grotesk',sans-serif;font-size:13px;color:#fff;outline:none;transition:all .2s}
+.form-input:focus{border-color:var(--teal-l);background:rgba(20,184,166,.05);box-shadow:0 0 0 3px rgba(20,184,166,.1)}
+.form-input::placeholder{color:rgba(255,255,255,.18)}
+.form-input option{background:#111827;color:#fff}
+.form-input select{background:#111827}
+.form-hint{font-size:10.5px;color:var(--tx3);margin-top:4px;line-height:1.5}
+.form-row-inline{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+/* toggle */
+.tog{position:relative;display:inline-block;width:32px;height:17px}
+.tog input{opacity:0;width:0;height:0}
+.tog-sl{position:absolute;cursor:pointer;inset:0;background:#374151;border-radius:17px;transition:.25s}
+.tog-sl::before{content:'';position:absolute;height:11px;width:11px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.25s}
+input:checked+.tog-sl{background:var(--teal)}
+input:checked+.tog-sl::before{transform:translateX(15px)}
+
+/* modal */
+.modal-ov{position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.72);backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;padding:16px;overflow-y:auto}
+.modal-ov.open{display:flex}
+.modal{background:rgba(11,15,27,.99);border:1px solid var(--border2);border-radius:18px;width:100%;max-width:520px;box-shadow:0 20px 70px rgba(0,0,0,.7);animation:modal-pop .25s cubic-bezier(.175,.885,.32,1.275) both;overflow:hidden;max-height:92vh;overflow-y:auto;margin:auto}
+@keyframes modal-pop{from{opacity:0;transform:scale(.93) translateY(16px)}to{opacity:1;transform:none}}
+.modal-head{padding:18px 20px 13px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:rgba(11,15,27,.99);z-index:2}
+.modal-title{font-family:'Syne',sans-serif;font-size:16px;font-weight:700}
+.modal-close{background:none;border:none;color:var(--tx3);font-size:20px;cursor:pointer;padding:3px;transition:color .15s}
+.modal-close:hover{color:#fff}
+.modal-body{padding:18px 20px}
+.modal-footer{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-end;border-top:1px solid var(--border)}
+
+/* toast */
+.toast-ctr{position:fixed;bottom:20px;right:20px;z-index:600;display:flex;flex-direction:column;gap:6px;pointer-events:none}
+.toast-item{background:rgba(10,14,28,.97);backdrop-filter:blur(16px);border:1px solid var(--border2);border-radius:11px;padding:11px 16px;font-size:13px;font-weight:600;box-shadow:0 7px 28px rgba(0,0,0,.5);display:flex;align-items:center;gap:8px;animation:t-in .3s ease;pointer-events:all;max-width:330px}
+@keyframes t-in{from{transform:translateX(110%);opacity:0}to{transform:none;opacity:1}}
+.toast-item.success{border-color:rgba(16,185,129,.3);color:#34d399}
+.toast-item.error{border-color:rgba(239,68,68,.28);color:#fca5a5}
+.toast-item.info{border-color:rgba(20,184,166,.28);color:#5eead4}
+.toast-item.warn{border-color:rgba(245,158,11,.28);color:#fbbf24}
+
+/* confirm dialog */
+.confirm-panel{background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.18);border-radius:10px;padding:14px;margin-bottom:14px}
+.confirm-panel p{font-size:13px;color:rgba(255,255,255,.75);line-height:1.6}
+.confirm-panel strong{color:#fca5a5}
+
+/* search bar */
+.search-bar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.search-inp{flex:1;min-width:180px;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:9px;padding:8px 13px;font-family:'Space Grotesk',sans-serif;font-size:12.5px;color:#fff;outline:none;transition:all .2s}
+.search-inp:focus{border-color:var(--teal-l);background:rgba(20,184,166,.05)}
+.search-inp::placeholder{color:var(--tx3)}
+
+/* empty state */
+.empty-state{text-align:center;padding:48px 20px;color:var(--tx3)}
+.empty-state .es-icon{font-size:52px;margin-bottom:12px;display:block;opacity:.5}
+.empty-state .es-title{font-family:'Syne',sans-serif;font-size:17px;font-weight:700;color:var(--tx2);margin-bottom:6px}
+.empty-state .es-sub{font-size:12px;line-height:1.7}
+
+/* school card grid */
+.school-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.school-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;transition:all .18s;position:relative;overflow:hidden}
+.school-card:hover{border-color:rgba(20,184,166,.22);box-shadow:0 6px 28px rgba(0,0,0,.25)}
+.school-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--teal),var(--teal-l));opacity:0;transition:opacity .2s;border-radius:14px 14px 0 0}
+.school-card:hover::before{opacity:1}
+.sc-top{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px}
+.sc-icon{width:44px;height:44px;border-radius:11px;background:linear-gradient(135deg,rgba(15,118,110,.25),rgba(20,184,166,.1));border:1px solid rgba(20,184,166,.18);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.sc-name{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;color:#fff;margin-bottom:3px}
+.sc-addr{font-size:11px;color:var(--tx3);line-height:1.5}
+.sc-meta{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.sc-actions{display:flex;gap:6px;flex-wrap:wrap}
+.service-row{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:rgba(255,255,255,.03);border-radius:7px;margin-bottom:5px}
+.service-lbl{font-size:12px;font-weight:600;color:var(--tx2);display:flex;align-items:center;gap:7px}
+.service-status{font-size:10px;font-weight:700}
+.service-status.on{color:var(--grn)}
+.service-status.off{color:var(--red)}
+
+/* viewer row */
+.viewer-row{display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:10px;margin-bottom:7px;flex-wrap:wrap}
+.viewer-email{font-size:12.5px;font-weight:600;color:#fff;flex:1;min-width:120px}
+.viewer-school{font-size:11px;color:var(--tx3)}
+.viewer-actions{display:flex;gap:5px;flex-wrap:wrap}
+
+/* activity log */
+.log-item{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.log-item:last-child{border-bottom:none}
+.log-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:4px}
+.log-msg{font-size:12px;color:var(--tx2);flex:1;line-height:1.5}
+.log-time{font-size:10px;color:var(--tx3);white-space:nowrap}
+
+/* password strength */
+.pw-strength{height:4px;border-radius:2px;margin-top:6px;transition:all .3s;background:#374151}
+.pw-strength-bar{height:100%;border-radius:2px;transition:width .3s,background .3s}
+
+/* responsive */
+@media(max-width:768px){
+  .sidebar{display:none}
+  .form-row-inline{grid-template-columns:1fr}
+  .stats-row{grid-template-columns:1fr 1fr}
+}
+
+/* page transitions */
+.page{display:none}
+.page.active{display:block;animation:page-in .2s ease}
+@keyframes page-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* danger zone */
+.danger-zone{border:1px solid rgba(239,68,68,.18);border-radius:12px;padding:16px;background:rgba(239,68,68,.04);margin-top:14px}
+.dz-title{font-size:12px;font-weight:700;color:#fca5a5;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px}
+
+/* sessions chips */
+.session-chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.s-chip{display:inline-flex;align-items:center;gap:5px;background:rgba(20,184,166,.1);border:1px solid rgba(20,184,166,.2);border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:600;color:#5eead4}
+.s-chip-del{cursor:pointer;color:rgba(94,234,212,.5);transition:color .15s}
+.s-chip-del:hover{color:#fca5a5}
+
+/* quick info box */
+.info-box{background:rgba(59,130,246,.07);border:1px solid rgba(59,130,246,.18);border-radius:10px;padding:12px 14px;font-size:12px;color:#93c5fd;line-height:1.7;margin-bottom:14px}
+.info-box strong{color:#bfdbfe}
+
+/* section card with colored left border */
+.section-block{border-left:3px solid var(--teal);padding-left:14px;margin-bottom:18px}
+.section-block-title{font-size:12px;font-weight:700;color:var(--teal-l);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px}
+</style>
+</head>
+<body>
+
+<!-- ── LOADING ── -->
+<div id="loadOv">
+  <div class="ring"><div class="ring-o"></div><div class="ring-i"></div></div>
+  <div class="load-label" id="loadLabel">Initializing</div>
+</div>
+
+<!-- ══ LOGIN ══ -->
+<div id="loginWrap">
+  <div style="position:fixed;top:16px;left:16px;z-index:200">
+    <button onclick="window.location.href='../index.html'" style="display:inline-flex;align-items:center;gap:6px;padding:7px 16px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:rgba(255,255,255,.6);font-size:11px;font-weight:700;cursor:pointer;font-family:'Space Grotesk',sans-serif;transition:all .15s" onmouseover="this.style.color='#fff';this.style.background='rgba(255,255,255,.13)'" onmouseout="this.style.color='rgba(255,255,255,.6)';this.style.background='rgba(255,255,255,.07)'">← School Portal</button>
+  </div>
+  <div class="login-box">
+    <div class="login-icon">🛡️</div>
+    <div class="login-title">Super Admin Panel</div>
+    <div class="login-sub">ID Card Studio Suite</div>
+    <div class="badge-superadmin">⭐ Super Administrator Access</div>
+    <div id="loginMsg" class="msg-box"></div>
+    <div class="inp-grp">
+      <label>Admin Email</label>
+      <div class="inp-wrap">
+        <span class="inp-ico">✉</span>
+        <input class="inp" type="email" id="loginEmail" placeholder="admin@school.edu" autocomplete="email">
+      </div>
+    </div>
+    <div class="inp-grp">
+      <label>Password</label>
+      <div class="inp-wrap">
+        <span class="inp-ico">🔒</span>
+        <input class="inp" type="password" id="loginPw" placeholder="••••••••" autocomplete="current-password" style="padding-right:38px">
+        <button class="pw-toggle" onclick="togglePw('loginPw',this)" type="button">👁</button>
+      </div>
+    </div>
+    <button class="btn-login" id="btnLogin" onclick="doLogin()">Sign In to Admin Panel</button>
+    <div style="text-align:center;margin-top:12px;font-size:10px;color:var(--tx3)">Access restricted to authorised super admins only</div>
+  </div>
+</div>
+
+<!-- ══ APP SHELL ══ -->
+<div id="app">
+
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div class="tb-brand">
+      <div class="tb-logo">🛡️</div>
+      <div>
+        <div class="tb-name">Super Admin Panel</div>
+        <div class="tb-sub" id="tbSub">ID Card Studio Suite</div>
+      </div>
+    </div>
+    <div class="tb-sep"></div>
+    <div id="tbBreadcrumb" style="font-size:12px;color:var(--tx3)">Dashboard</div>
+    <div class="tb-right">
+      <button onclick="window.location.href='../index.html'" style="display:flex;align-items:center;gap:6px;padding:5px 13px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:rgba(255,255,255,.65);font-size:11px;font-weight:700;cursor:pointer;font-family:'Space Grotesk',sans-serif;transition:all .15s" onmouseover="this.style.background='rgba(255,255,255,.12)';this.style.color='#fff'" onmouseout="this.style.background='rgba(255,255,255,.06)';this.style.color='rgba(255,255,255,.65)'">← School Portal</button>
+      <div style="font-size:10px;background:rgba(201,162,39,.1);border:1px solid rgba(201,162,39,.2);border-radius:20px;padding:3px 11px;font-weight:700;color:var(--gold)">⭐ SUPER ADMIN</div>
+      <div class="profile-area">
+        <div class="profile-btn" id="profileBtn" onclick="togglePM()">A</div>
+        <div class="profile-menu" id="profileMenu">
+          <div class="pm-head">
+            <div class="pm-head-name" id="pmName">Super Admin</div>
+            <div class="pm-head-email" id="pmEmail">—</div>
+          </div>
+          <button class="pm-item" onclick="navigateTo('settings')">⚙️ &nbsp;Account Settings</button>
+          <button class="pm-item danger" onclick="doLogout()">🚪 &nbsp;Logout</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BODY -->
+  <div class="app-body">
+
+    <!-- SIDEBAR -->
+    <div class="sidebar">
+      <div class="sb-hdr">
+        <div class="sb-hdr-label">Navigation</div>
+      </div>
+      <div class="sb-nav">
+        <button class="nav-item active" id="nav-dashboard" onclick="navigateTo('dashboard')">
+          <span class="ni-icon">📊</span>Dashboard
+        </button>
+
+        <div class="nav-section-label">Institution</div>
+        <button class="nav-item" id="nav-schools" onclick="navigateTo('schools')">
+          <span class="ni-icon">🏫</span>Schools
+          <span class="ni-badge" id="nbSchools">0</span>
+        </button>
+
+        <div class="nav-section-label">Access Control</div>
+        <button class="nav-item" id="nav-viewers" onclick="navigateTo('viewers')">
+          <span class="ni-icon">👁</span>Viewer Users
+          <span class="ni-badge" id="nbViewers">0</span>
+        </button>
+
+        <div class="nav-section-label">Activity</div>
+        <button class="nav-item" id="nav-logs" onclick="navigateTo('logs')">
+          <span class="ni-icon">📋</span>Activity Log
+        </button>
+
+        <div class="nav-section-label">System</div>
+        <button class="nav-item" id="nav-settings" onclick="navigateTo('settings')">
+          <span class="ni-icon">⚙️</span>Settings
+        </button>
+      </div>
+      <div class="sb-footer">
+        <div class="sb-footer-txt">Designed by <strong>Hrishav Ranjan</strong><br>© 2026 · Admin Suite v1.0</div>
+      </div>
+    </div>
+
+    <!-- CONTENT -->
+    <div class="content" id="mainContent">
+
+      <!-- ═══ PAGE: DASHBOARD ═══ -->
+      <div class="page active" id="page-dashboard">
+        <div class="page-hdr">
+          <div>
+            <div class="page-title">Dashboard Overview</div>
+            <div class="page-sub">Real-time stats across all schools and studios</div>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-teal" onclick="refreshDashboard()">🔄 Refresh</button>
+          </div>
+        </div>
+
+        <div class="stats-row" id="dashStats">
+          <div class="stat teal"><span class="stat-icon">🏫</span><div class="stat-val" id="ds-schools">—</div><div class="stat-lbl">Schools</div></div>
+          <div class="stat blue"><span class="stat-icon">🎓</span><div class="stat-val" id="ds-students">—</div><div class="stat-lbl">Students</div></div>
+          <div class="stat gold"><span class="stat-icon">👩‍🏫</span><div class="stat-val" id="ds-teachers">—</div><div class="stat-lbl">Teachers</div></div>
+          <div class="stat teal"><span class="stat-icon">👁</span><div class="stat-val" id="ds-viewers">—</div><div class="stat-lbl">Viewer Users</div></div>
+          <div class="stat blue"><span class="stat-icon">🎴</span><div class="stat-val" id="ds-templates">—</div><div class="stat-lbl">Templates</div></div>
+          <div class="stat gold"><span class="stat-icon">⚡</span><div class="stat-val" id="ds-active">—</div><div class="stat-lbl">Active Services</div></div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;flex-wrap:wrap">
+          <div class="card">
+            <div class="card-title"><span class="ct-icon">🏫</span>Recent Schools</div>
+            <div id="recentSchools">
+              <div style="text-align:center;padding:20px;color:var(--tx3);font-size:12px">Loading…</div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title"><span class="ct-icon">📋</span>Recent Activity</div>
+            <div id="recentLogs">
+              <div style="text-align:center;padding:20px;color:var(--tx3);font-size:12px">Loading…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ PAGE: SCHOOLS ═══ -->
+      <div class="page" id="page-schools">
+        <div class="page-hdr">
+          <div>
+            <div class="page-title">Schools</div>
+            <div class="page-sub">Manage all schools, sessions, and studio services</div>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-teal" onclick="openModal('modalAddSchool')">＋ Add School</button>
+          </div>
+        </div>
+        <div class="search-bar">
+          <input class="search-inp" placeholder="🔍 Search schools…" oninput="filterSchools(this.value)" id="schoolSearch">
+        </div>
+        <div id="schoolsGrid" class="school-grid">
+          <div style="text-align:center;padding:40px;color:var(--tx3);font-size:12px;grid-column:1/-1">Loading schools…</div>
+        </div>
+      </div>
+
+      <!-- ═══ PAGE: VIEWERS ═══ -->
+      <div class="page" id="page-viewers">
+        <div class="page-hdr">
+          <div>
+            <div class="page-title">Viewer Users</div>
+            <div class="page-sub">Users with print-only access assigned to specific schools</div>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-teal" onclick="openModal('modalAddViewer')">＋ Add Viewer</button>
+          </div>
+        </div>
+        <div class="info-box">
+          <strong>How it works:</strong> Viewer users can log in to the main portal (<code>index.html</code>) with the credentials you set here. They can only see the <strong>Print tab</strong> for their assigned school. No editing, uploading, or designing allowed.
+        </div>
+        <div class="search-bar">
+          <input class="search-inp" placeholder="🔍 Search viewers by email or school…" oninput="filterViewers(this.value)">
+          <select class="search-inp" style="flex:0;min-width:160px" onchange="filterViewersBySchool(this.value)" id="viewerSchoolFilter">
+            <option value="">All Schools</option>
+          </select>
+        </div>
+        <div id="viewersList">
+          <div style="text-align:center;padding:40px;color:var(--tx3);font-size:12px">Loading viewers…</div>
+        </div>
+      </div>
+
+      <!-- ═══ PAGE: LOGS ═══ -->
+      <div class="page" id="page-logs">
+        <div class="page-hdr">
+          <div>
+            <div class="page-title">Activity Log</div>
+            <div class="page-sub">Audit trail of all admin actions</div>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-ghost" onclick="clearLogs()">🗑 Clear Logs</button>
+          </div>
+        </div>
+        <div class="card">
+          <div id="logsContainer">
+            <div style="text-align:center;padding:30px;color:var(--tx3);font-size:12px">Loading…</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ PAGE: SETTINGS ═══ -->
+      <div class="page" id="page-settings">
+        <div class="page-hdr">
+          <div>
+            <div class="page-title">Settings</div>
+            <div class="page-sub">Admin account and system configuration</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div class="card">
+            <div class="card-title">🔑 Change Password</div>
+            <div id="settingsMsg" class="msg-box"></div>
+            <div class="form-row"><label class="form-label">Current Password</label><input class="form-input" type="password" id="curPw" placeholder="••••••••"></div>
+            <div class="form-row"><label class="form-label">New Password</label><input class="form-input" type="password" id="newPw" placeholder="Min. 6 characters" oninput="checkPwStrength(this)">
+              <div class="pw-strength"><div class="pw-strength-bar" id="pwBar" style="width:0"></div></div>
+            </div>
+            <div class="form-row"><label class="form-label">Confirm New Password</label><input class="form-input" type="password" id="newPw2" placeholder="Repeat new password"></div>
+            <button class="btn btn-teal" onclick="changePassword()">🔑 Update Password</button>
+          </div>
+          <div class="card">
+            <div class="card-title">ℹ️ Admin Info</div>
+            <div id="adminInfoCard" style="font-size:12.5px;line-height:2;color:var(--tx2)">Loading…</div>
+          </div>
+        </div>
+        <div class="danger-zone" style="margin-top:20px">
+          <div class="dz-title">⚠️ Danger Zone</div>
+          <div style="font-size:12px;color:var(--tx2);margin-bottom:10px;line-height:1.6">These actions are irreversible. Proceed with caution.</div>
+          <button class="btn btn-red" onclick="confirmClearAllLogs()">🗑 Clear All Activity Logs</button>
+        </div>
+      </div>
+
+    </div><!-- /content -->
+  </div><!-- /app-body -->
+</div><!-- /app -->
+
+<!-- TOAST CONTAINER -->
+<div class="toast-ctr" id="toastCtr"></div>
+
+<!-- ════════════════════════════════════════
+     MODALS
+════════════════════════════════════════ -->
+
+<!-- ADD / EDIT SCHOOL -->
+<div class="modal-ov" id="modalAddSchool">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title" id="modalSchoolTitle">🏫 Add New School</div>
+      <button class="modal-close" onclick="closeModal('modalAddSchool')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editSchoolId">
+      <div class="form-row"><label class="form-label">School Name *</label><input class="form-input" id="schoolName" placeholder="e.g. U.M.S. SIMRI WEST"></div>
+      <div class="form-row-inline">
+        <div class="form-row"><label class="form-label">City / Address</label><input class="form-input" id="schoolLine2" placeholder="e.g. Bisfi, Madhubani"></div>
+        <div class="form-row"><label class="form-label">UDISE Code</label><input class="form-input" id="schoolLine3" placeholder="e.g. 10050505003"></div>
+      </div>
+      <div class="form-row"><label class="form-label">Founded (Line 4)</label><input class="form-input" id="schoolLine4" placeholder="e.g. ESTD: 1986"></div>
+      <div class="form-row">
+        <label class="form-label">Academic Sessions</label>
+        <div style="display:flex;gap:7px;align-items:center">
+          <input class="form-input" id="newSessionInput" placeholder="e.g. 2024-25" style="flex:1">
+          <button class="btn btn-teal btn-sm" onclick="addSessionToForm()">＋ Add</button>
+        </div>
+        <div class="session-chips" id="sessionChips"></div>
+        <div class="form-hint">At least one session is required. Press ＋ to add.</div>
+      </div>
+      <div class="section-block">
+        <div class="section-block-title">🎴 Studio Services</div>
+        <div class="service-row">
+          <div class="service-lbl"><span>🎓</span>Student ID-Card Studio</div>
+          <div style="display:flex;align-items:center;gap:7px">
+            <span class="service-status" id="studentSvcStatus">ON</span>
+            <label class="tog"><input type="checkbox" id="studentSvcToggle" checked><span class="tog-sl"></span></label>
+          </div>
+        </div>
+        <div class="service-row">
+          <div class="service-lbl"><span>👩‍🏫</span>Teacher ID-Card Studio</div>
+          <div style="display:flex;align-items:center;gap:7px">
+            <span class="service-status" id="teacherSvcStatus">ON</span>
+            <label class="tog"><input type="checkbox" id="teacherSvcToggle" checked><span class="tog-sl"></span></label>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modalAddSchool')">Cancel</button>
+      <button class="btn btn-teal" onclick="saveSchool()">💾 Save School</button>
+    </div>
+  </div>
+</div>
+
+<!-- DELETE SCHOOL CONFIRM -->
+<div class="modal-ov" id="modalDeleteSchool">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-head">
+      <div class="modal-title">⚠️ Delete School</div>
+      <button class="modal-close" onclick="closeModal('modalDeleteSchool')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="confirm-panel">
+        <p>You are about to permanently delete <strong id="deleteSchoolName">this school</strong> and <strong>all its data</strong> (students, teachers, templates, settings).</p>
+        <p style="margin-top:8px;color:#fca5a5;font-weight:700">⚠️ This action cannot be undone.</p>
+      </div>
+      <div class="form-row"><label class="form-label">Type the school name to confirm</label><input class="form-input" id="deleteSchoolConfirmInput" placeholder="Type school name here"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modalDeleteSchool')">Cancel</button>
+      <button class="btn btn-red" onclick="confirmDeleteSchool()">🗑 Delete Permanently</button>
+    </div>
+  </div>
+</div>
+
+<!-- SUSPEND SERVICE CONFIRM -->
+<div class="modal-ov" id="modalSuspendService">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-head">
+      <div class="modal-title" id="suspendTitle">Suspend Service</div>
+      <button class="modal-close" onclick="closeModal('modalSuspendService')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="suspendBody" style="font-size:13px;color:var(--tx2);line-height:1.7"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modalSuspendService')">Cancel</button>
+      <button class="btn btn-gold" id="suspendConfirmBtn" onclick="confirmSuspend()">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD VIEWER -->
+<div class="modal-ov" id="modalAddViewer">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title" id="modalViewerTitle">👁 Add Viewer User</div>
+      <button class="modal-close" onclick="closeModal('modalAddViewer')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editViewerUid">
+      <div class="info-box" id="viewerModalInfo">Viewer users can only access the <strong>Print tab</strong> for their assigned school. They cannot upload, edit, or use the designer.</div>
+      <div class="form-row"><label class="form-label">Email Address *</label><input class="form-input" id="viewerEmail" placeholder="viewer@school.edu" type="email"></div>
+      <div class="form-row" id="viewerPwRow">
+        <label class="form-label">Temporary Password *</label>
+        <div class="inp-wrap">
+          <input class="form-input" id="viewerPw" placeholder="Min. 6 characters" type="password" style="padding-right:38px">
+          <button class="pw-toggle" onclick="togglePv()" type="button" style="position:absolute;right:11px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--tx3);font-size:14px">👁</button>
+        </div>
+        <div class="form-hint">Viewer will use this password to log in. You can reset it later.</div>
+      </div>
+      <div class="form-row"><label class="form-label">Assign to School *</label>
+        <select class="form-input" id="viewerSchool">
+          <option value="">— Select a school —</option>
+        </select>
+      </div>
+      <div class="form-row"><label class="form-label">Allowed Studio Access</label>
+        <div class="service-row">
+          <div class="service-lbl"><span>🎓</span>Student Studio (Print)</div>
+          <label class="tog"><input type="checkbox" id="viewerAllowStudent" checked><span class="tog-sl"></span></label>
+        </div>
+        <div class="service-row">
+          <div class="service-lbl"><span>👩‍🏫</span>Teacher Studio (Print)</div>
+          <label class="tog"><input type="checkbox" id="viewerAllowTeacher" checked><span class="tog-sl"></span></label>
+        </div>
+      </div>
+      <div id="viewerModalMsg" class="msg-box"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modalAddViewer')">Cancel</button>
+      <button class="btn btn-teal" id="btnSaveViewer" onclick="saveViewer()">💾 Create Viewer</button>
+    </div>
+  </div>
+</div>
+
+<!-- RESET VIEWER PASSWORD -->
+<div class="modal-ov" id="modalResetViewerPw">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-head">
+      <div class="modal-title">🔑 Reset Viewer Password</div>
+      <button class="modal-close" onclick="closeModal('modalResetViewerPw')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="resetPwViewerInfo" style="font-size:12.5px;color:var(--tx2);margin-bottom:14px;line-height:1.6"></div>
+      <div class="form-row"><label class="form-label">New Password *</label><input class="form-input" id="newViewerPw" type="password" placeholder="Min. 6 characters"></div>
+      <div id="resetViewerPwMsg" class="msg-box"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modalResetViewerPw')">Cancel</button>
+      <button class="btn btn-teal" onclick="confirmResetViewerPw()">🔑 Reset Password</button>
+    </div>
+  </div>
+</div>
+
+<!-- VIEW / EDIT SCHOOL DETAIL -->
+<div class="modal-ov" id="modalSchoolDetail">
+  <div class="modal" style="max-width:600px">
+    <div class="modal-head">
+      <div class="modal-title" id="detailSchoolName">School Details</div>
+      <button class="modal-close" onclick="closeModal('modalSchoolDetail')">✕</button>
+    </div>
+    <div class="modal-body" id="modalSchoolDetailBody">
+      Loading…
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modalSchoolDetail')">Close</button>
+      <button class="btn btn-teal" id="detailEditBtn" onclick="">✏️ Edit School</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════
+   FIREBASE CONFIG
+═══════════════════════════════════════════ */
+const fbCfg = {
+  apiKey: "AIzaSyCKjBisAbjBrqLgMiIGVrXipypvpL1BLFw",
+  authDomain: "id-card-studio-coex.firebaseapp.com",
+  projectId: "id-card-studio-coex",
+  storageBucket: "id-card-studio-coex.firebasestorage.app",
+  messagingSenderId: "560739605567",
+  appId: "1:560739605567:web:5ddc295d98c1627a732c8a"
+};
+
+// Use secondary app to avoid signing out current user when creating viewer accounts
+firebase.initializeApp(fbCfg);
+// Secondary app for creating viewers without affecting admin session
+let secondaryApp = null;
+try {
+  secondaryApp = firebase.initializeApp(fbCfg, 'secondary');
+} catch(e) {}
+
+const auth = firebase.auth();
+const db   = firebase.firestore();
+const secAuth = secondaryApp ? secondaryApp.auth() : null;
+
+/* ═══════════════════════════════════════════
+   CONSTANTS
+═══════════════════════════════════════════ */
+const SUPER_ADMIN_EMAIL = 'hrishavranjan2003@gmail.com';
+
+/* ═══════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════ */
+let currentUser = null;
+let allSchools  = [];
+let allViewers  = [];
+let allLogs     = [];
+let formSessions = [];
+let pendingDeleteSchoolId = null;
+let pendingDeleteSchoolName = '';
+let pendingSuspendData = null;
+let pendingResetViewerData = null;
+let currentPage = 'dashboard';
+
+/* ═══════════════════════════════════════════
+   LOADING ANIMATION
+═══════════════════════════════════════════ */
+const loadMsgs = ['Initializing','Connecting to Firebase','Verifying credentials','Loading admin panel'];
+let lmi = 0;
+const lmInt = setInterval(() => {
+  lmi = (lmi + 1) % loadMsgs.length;
+  document.getElementById('loadLabel').textContent = loadMsgs[lmi];
+}, 700);
+
+/* ═══════════════════════════════════════════
+   AUTH STATE
+═══════════════════════════════════════════ */
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).then(() => {
+auth.onAuthStateChanged(async user => {
+  clearInterval(lmInt);
+  const ov = document.getElementById('loadOv');
+  if (user) {
+    // Check if super admin
+    if (user.email !== SUPER_ADMIN_EMAIL) {
+      await auth.signOut();
+      ov.classList.add('hidden');
+      setTimeout(() => ov.style.display='none', 400);
+      showLogin();
+      showLoginMsg('Access denied. This panel is restricted to super admins only.', 'err');
+      return;
+    }
+    currentUser = user;
+    enterApp(user);
+  } else {
+    currentUser = null;
+    showLogin();
+  }
+  ov.classList.add('hidden');
+  setTimeout(() => ov.style.display='none', 400);
+});
+}); // closes setPersistence
+
+/* ─── LOGIN ─── */
+async function doLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const pw    = document.getElementById('loginPw').value;
+  if (!email || !pw) { showLoginMsg('Please fill in all fields.', 'err'); return; }
+  if (email !== SUPER_ADMIN_EMAIL) { showLoginMsg('Access denied. Not a super admin account.', 'err'); return; }
+  const btn = document.getElementById('btnLogin');
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  try {
+    await auth.signInWithEmailAndPassword(email, pw);
+  } catch(e) {
+    showLoginMsg(fbErrMsg(e), 'err');
+    btn.disabled = false; btn.textContent = 'Sign In to Admin Panel';
+  }
+}
+
+function showLogin() {
+  document.getElementById('loginWrap').classList.add('show');
+  document.getElementById('app').classList.remove('show');
+  // Reset login button state
+  const btn = document.getElementById('btnLogin');
+  btn.disabled = false;
+  btn.textContent = 'Sign In to Admin Panel';
+  // Clear fields and message
+  document.getElementById('loginEmail').value = '';
+  document.getElementById('loginPw').value = '';
+  document.getElementById('loginMsg').style.display = 'none';
+}
+
+function showLoginMsg(msg, type) {
+  const m = document.getElementById('loginMsg');
+  m.textContent = msg; m.className = 'msg-box ' + type; m.style.display = 'block';
+}
+
+async function doLogout() {
+  closePM();
+  await auth.signOut();
+  showLogin();
+}
+
+/* ─── ENTER APP ─── */
+async function enterApp(user) {
+  document.getElementById('loginWrap').classList.remove('show');
+  document.getElementById('app').classList.add('show');
+  document.getElementById('profileBtn').textContent = (user.displayName || user.email || 'A')[0].toUpperCase();
+  document.getElementById('pmName').textContent = user.displayName || 'Super Admin';
+  document.getElementById('pmEmail').textContent = user.email;
+  document.getElementById('adminInfoCard').innerHTML = `
+    <div>Email: <strong style="color:#fff">${esc(user.email)}</strong></div>
+    <div>Role: <strong style="color:var(--gold)">⭐ Super Administrator</strong></div>
+    <div>UID: <code style="font-size:10px;color:var(--tx3)">${esc(user.uid)}</code></div>
+    <div>Last sign-in: <strong style="color:#fff">${user.metadata.lastSignInTime}</strong></div>
+  `;
+  await loadAll();
+  navigateTo('dashboard');
+}
+
+/* ═══════════════════════════════════════════
+   LOAD ALL DATA
+═══════════════════════════════════════════ */
+async function loadAll() {
+  await Promise.allSettled([loadSchools(), loadViewers(), loadLogs()]);
+  updateNavBadges();
+}
+
+async function loadSchools() {
+  try {
+    const snap = await db.collection('schools').get();
+    allSchools = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch(e) {
+    console.warn('loadSchools error', e);
+    allSchools = [];
+  }
+}
+
+async function loadViewers() {
+  try {
+    const snap = await db.collection('viewers').get();
+    allViewers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch(e) {
+    console.warn('loadViewers error', e);
+    allViewers = [];
+  }
+}
+
+async function loadLogs() {
+  try {
+    const snap = await db.collection('adminLogs').orderBy('ts', 'desc').limit(200).get();
+    allLogs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch(e) {
+    allLogs = [];
+  }
+}
+
+function updateNavBadges() {
+  document.getElementById('nbSchools').textContent = allSchools.length;
+  document.getElementById('nbViewers').textContent = allViewers.length;
+}
+
+/* ═══════════════════════════════════════════
+   NAVIGATION
+═══════════════════════════════════════════ */
+function navigateTo(page) {
+  closePM();
+  currentPage = page;
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const pageEl = document.getElementById('page-' + page);
+  const navEl  = document.getElementById('nav-' + page);
+  if (pageEl) pageEl.classList.add('active');
+  if (navEl)  navEl.classList.add('active');
+  const labels = {dashboard:'Dashboard',schools:'Schools',viewers:'Viewer Users',logs:'Activity Log',settings:'Settings'};
+  document.getElementById('tbBreadcrumb').textContent = labels[page] || page;
+  // render page data
+  if (page === 'dashboard') renderDashboard();
+  else if (page === 'schools') renderSchools();
+  else if (page === 'viewers') renderViewers();
+  else if (page === 'logs') renderLogs();
+}
+
+/* ═══════════════════════════════════════════
+   DASHBOARD
+═══════════════════════════════════════════ */
+async function refreshDashboard() {
+  showToast('Refreshing…', 'info');
+  await loadAll();
+  renderDashboard();
+  showToast('Dashboard refreshed ✓', 'success');
+}
+
+async function renderDashboard() {
+  document.getElementById('ds-schools').textContent = allSchools.length;
+  document.getElementById('ds-viewers').textContent = allViewers.length;
+
+  let studentTotal = 0, teacherTotal = 0, templateTotal = 0, activeSvc = 0;
+  for (const sch of allSchools) {
+    const svcStudent = sch.services?.student !== false;
+    const svcTeacher = sch.services?.teacher !== false;
+    if (svcStudent) activeSvc++;
+    if (svcTeacher) activeSvc++;
+    try {
+      const sessions = sch.sessions || [];
+      for (const ses of sessions) {
+        const ss = await db.collection(`schools/${sch.id}/sessions/${ses}/students`).get();
+        studentTotal += ss.size;
+      }
+    } catch {}
+    try {
+      for (const ses of (sch.sessions||[])) {
+        const ts = await db.collection(`schools/${sch.id}/sessions/${ses}/teachers`).get();
+        teacherTotal += ts.size;
+      }
+    } catch {}
+    try {
+      const tpls = await db.collection(`schools/${sch.id}/templates_teacher`).get();
+      templateTotal += tpls.size;
+    } catch {}
+  }
+  document.getElementById('ds-students').textContent  = studentTotal;
+  document.getElementById('ds-teachers').textContent  = teacherTotal;
+  document.getElementById('ds-templates').textContent = templateTotal;
+  document.getElementById('ds-active').textContent    = activeSvc;
+
+  // Recent schools
+  const rsEl = document.getElementById('recentSchools');
+  if (!allSchools.length) {
+    rsEl.innerHTML = `<div class="empty-state"><span class="es-icon">🏫</span><div class="es-title">No Schools</div><div class="es-sub">Add your first school to get started.</div></div>`;
+  } else {
+    rsEl.innerHTML = allSchools.slice(0,5).map(s => `
+      <div class="log-item">
+        <div class="log-dot" style="background:var(--teal-l)"></div>
+        <div class="log-msg">
+          <strong>${esc(s.name)}</strong><br>
+          <span style="font-size:10px;color:var(--tx3)">${esc(s.line2||'')} · ${(s.sessions||[]).length} sessions</span>
+        </div>
+        <div class="log-time">
+          ${s.services?.student!==false?'🎓':'🚫'} ${s.services?.teacher!==false?'👩‍🏫':'🚫'}
+        </div>
+      </div>`).join('');
+  }
+
+  // Recent logs
+  const rlEl = document.getElementById('recentLogs');
+  if (!allLogs.length) {
+    rlEl.innerHTML = `<div style="text-align:center;padding:20px;color:var(--tx3);font-size:12px">No activity yet.</div>`;
+  } else {
+    rlEl.innerHTML = allLogs.slice(0,8).map(l => `
+      <div class="log-item">
+        <div class="log-dot" style="background:${logColor(l.type)}"></div>
+        <div class="log-msg">${esc(l.msg)}</div>
+        <div class="log-time">${timeAgo(l.ts)}</div>
+      </div>`).join('');
+  }
+}
+
+/* ═══════════════════════════════════════════
+   SCHOOLS
+═══════════════════════════════════════════ */
+let schoolSearchQuery = '';
+
+function filterSchools(q) { schoolSearchQuery = q.toLowerCase(); renderSchools(); }
+
+function renderSchools() {
+  const el = document.getElementById('schoolsGrid');
+  const list = allSchools.filter(s =>
+    !schoolSearchQuery ||
+    (s.name||'').toLowerCase().includes(schoolSearchQuery) ||
+    (s.line2||'').toLowerCase().includes(schoolSearchQuery)
+  );
+  if (!list.length) {
+    el.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><span class="es-icon">🏫</span><div class="es-title">No Schools Found</div><div class="es-sub">${allSchools.length?'Try a different search.':'Click "+ Add School" to create one.'}</div></div>`;
+    return;
+  }
+  el.innerHTML = list.map(s => schoolCard(s)).join('');
+}
+
+function schoolCard(s) {
+  const svcS = s.services?.student !== false;
+  const svcT = s.services?.teacher !== false;
+  const viewerCount = allViewers.filter(v => v.schoolId === s.id).length;
+  return `
+  <div class="school-card" id="sc-${esc(s.id)}">
+    <div class="sc-top">
+      <div class="sc-icon">🏫</div>
+      <div>
+        <div class="sc-name">${esc(s.name)}</div>
+        <div class="sc-addr">${esc(s.line2||'—')}<br>${esc(s.line3||'')} ${s.line4?'· '+esc(s.line4):''}</div>
+      </div>
+    </div>
+    <div class="sc-meta">
+      <span class="badge badge-teal">📅 ${(s.sessions||[]).length} sessions</span>
+      <span class="badge badge-blue">👁 ${viewerCount} viewers</span>
+      ${s.adminEmail?`<span class="badge badge-gray" style="font-size:9px">${esc(s.adminEmail)}</span>`:''}
+    </div>
+    <div style="margin-bottom:10px">
+      <div class="service-row">
+        <div class="service-lbl" style="font-size:11px"><span>🎓</span>Student Studio</div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="service-status ${svcS?'on':'off'}" style="font-size:10px">${svcS?'● ON':'● OFF'}</span>
+          <label class="tog"><input type="checkbox" ${svcS?'checked':''} onchange="toggleService('${esc(s.id)}','student',this.checked)"><span class="tog-sl"></span></label>
+        </div>
+      </div>
+      <div class="service-row">
+        <div class="service-lbl" style="font-size:11px"><span>👩‍🏫</span>Teacher Studio</div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="service-status ${svcT?'on':'off'}" style="font-size:10px">${svcT?'● ON':'● OFF'}</span>
+          <label class="tog"><input type="checkbox" ${svcT?'checked':''} onchange="toggleService('${esc(s.id)}','teacher',this.checked)"><span class="tog-sl"></span></label>
+        </div>
+      </div>
+    </div>
+    <div class="sc-actions">
+      <button class="btn btn-ghost btn-xs" onclick="viewSchoolDetail('${esc(s.id)}')">🔍 Detail</button>
+      <button class="btn btn-ghost btn-xs" onclick="editSchool('${esc(s.id)}')">✏️ Edit</button>
+      <button class="btn btn-red btn-xs" onclick="deleteSchool('${esc(s.id)}','${esc(s.name)}')">🗑 Delete</button>
+    </div>
+  </div>`;
+}
+
+/* Toggle Service */
+async function toggleService(schoolId, service, enabled) {
+  const school = allSchools.find(s => s.id === schoolId);
+  if (!school) return;
+  const action = enabled ? 'enable' : 'suspend';
+  try {
+    await db.collection('schools').doc(schoolId).set(
+      { services: { ...school.services, [service]: enabled } },
+      { merge: true }
+    );
+    school.services = { ...school.services, [service]: enabled };
+    showToast(`${service} studio ${action}d for ${school.name}`, enabled?'success':'warn');
+    await logAction(action + '_service', `${enabled?'Enabled':'Suspended'} ${service} studio for "${school.name}"`);
+    renderSchools();
+  } catch(e) {
+    showToast('Failed to update service: ' + e.message, 'error');
+  }
+}
+
+/* Add School Form */
+function openAddSchool() {
+  document.getElementById('modalSchoolTitle').textContent = '🏫 Add New School';
+  document.getElementById('editSchoolId').value = '';
+  document.getElementById('schoolName').value = '';
+  document.getElementById('schoolLine2').value = '';
+  document.getElementById('schoolLine3').value = '';
+  document.getElementById('schoolLine4').value = '';
+  document.getElementById('newSessionInput').value = '';
+  document.getElementById('studentSvcToggle').checked = true;
+  document.getElementById('teacherSvcToggle').checked = true;
+  formSessions = [currentYearSession()];
+  renderSessionChips();
+  openModal('modalAddSchool');
+}
+
+function currentYearSession() {
+  const y = new Date().getFullYear();
+  return `${y}-${String(y+1).slice(2)}`;
+}
+
+function addSessionToForm() {
+  const inp = document.getElementById('newSessionInput');
+  const val = inp.value.trim();
+  if (!val) return;
+  if (formSessions.includes(val)) { showToast('Session already added', 'warn'); return; }
+  formSessions.push(val);
+  inp.value = '';
+  renderSessionChips();
+}
+
+function removeFormSession(s) {
+  formSessions = formSessions.filter(x => x !== s);
+  renderSessionChips();
+}
+
+function renderSessionChips() {
+  document.getElementById('sessionChips').innerHTML = formSessions.map(s =>
+    `<span class="s-chip">${esc(s)}<span class="s-chip-del" onclick="removeFormSession('${esc(s)}')">✕</span></span>`
+  ).join('');
+}
+
+function editSchool(id) {
+  const s = allSchools.find(x => x.id === id);
+  if (!s) return;
+  document.getElementById('modalSchoolTitle').textContent = '✏️ Edit School';
+  document.getElementById('editSchoolId').value = id;
+  document.getElementById('schoolName').value = s.name || '';
+  document.getElementById('schoolLine2').value = s.line2 || '';
+  document.getElementById('schoolLine3').value = s.line3 || '';
+  document.getElementById('schoolLine4').value = s.line4 || '';
+  document.getElementById('studentSvcToggle').checked = s.services?.student !== false;
+  document.getElementById('teacherSvcToggle').checked = s.services?.teacher !== false;
+  formSessions = [...(s.sessions || [])];
+  renderSessionChips();
+  openModal('modalAddSchool');
+}
+
+async function saveSchool() {
+  const name = document.getElementById('schoolName').value.trim();
+  if (!name) { showToast('School name is required', 'warn'); return; }
+  if (!formSessions.length) { showToast('Add at least one academic session', 'warn'); return; }
+
+  const editId = document.getElementById('editSchoolId').value;
+  const data = {
+    name,
+    line2: document.getElementById('schoolLine2').value.trim(),
+    line3: document.getElementById('schoolLine3').value.trim(),
+    line4: document.getElementById('schoolLine4').value.trim(),
+    sessions: formSessions,
+    adminEmail: SUPER_ADMIN_EMAIL,
+    services: {
+      student: document.getElementById('studentSvcToggle').checked,
+      teacher: document.getElementById('teacherSvcToggle').checked
+    },
+    updatedAt: Date.now()
+  };
+
+  try {
+    if (editId) {
+      await db.collection('schools').doc(editId).set(data, { merge: true });
+      const idx = allSchools.findIndex(s => s.id === editId);
+      if (idx !== -1) allSchools[idx] = { id: editId, ...data };
+      showToast('School updated ✓', 'success');
+      await logAction('edit_school', `Edited school "${name}"`);
+    } else {
+      const docId = 'school_' + Date.now();
+      await db.collection('schools').doc(docId).set({ id: docId, ...data });
+      allSchools.push({ id: docId, ...data });
+      showToast('School created ✓', 'success');
+      await logAction('add_school', `Added school "${name}"`);
+    }
+    closeModal('modalAddSchool');
+    updateNavBadges();
+    renderSchools();
+    updateViewerSchoolDropdowns();
+  } catch(e) {
+    showToast('Save failed: ' + e.message, 'error');
+  }
+}
+
+function deleteSchool(id, name) {
+  pendingDeleteSchoolId = id;
+  pendingDeleteSchoolName = name;
+  document.getElementById('deleteSchoolName').textContent = name;
+  document.getElementById('deleteSchoolConfirmInput').value = '';
+  openModal('modalDeleteSchool');
+}
+
+async function confirmDeleteSchool() {
+  const typed = document.getElementById('deleteSchoolConfirmInput').value.trim();
+  if (typed !== pendingDeleteSchoolName) {
+    showToast('School name does not match', 'error');
+    return;
+  }
+  try {
+    await db.collection('schools').doc(pendingDeleteSchoolId).delete();
+    allSchools = allSchools.filter(s => s.id !== pendingDeleteSchoolId);
+    // Also remove viewers assigned to this school
+    const toRemove = allViewers.filter(v => v.schoolId === pendingDeleteSchoolId);
+    for (const v of toRemove) {
+      try { await db.collection('viewers').doc(v.id).delete(); } catch {}
+    }
+    allViewers = allViewers.filter(v => v.schoolId !== pendingDeleteSchoolId);
+    closeModal('modalDeleteSchool');
+    showToast('School deleted permanently', 'success');
+    await logAction('delete_school', `Deleted school "${pendingDeleteSchoolName}"`);
+    updateNavBadges();
+    renderSchools();
+    renderViewers();
+    updateViewerSchoolDropdowns();
+  } catch(e) {
+    showToast('Delete failed: ' + e.message, 'error');
+  }
+}
+
+/* School Detail Modal */
+function viewSchoolDetail(id) {
+  const s = allSchools.find(x => x.id === id);
+  if (!s) return;
+  document.getElementById('detailSchoolName').textContent = '🏫 ' + s.name;
+  document.getElementById('detailEditBtn').onclick = () => { closeModal('modalSchoolDetail'); editSchool(id); };
+
+  const viewers = allViewers.filter(v => v.schoolId === id);
+  document.getElementById('modalSchoolDetailBody').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+      <div><div class="form-label">School Name</div><div style="font-size:14px;font-weight:700;color:#fff">${esc(s.name)}</div></div>
+      <div><div class="form-label">School ID</div><code style="font-size:10.5px;color:var(--teal-l)">${esc(s.id)}</code></div>
+      <div><div class="form-label">Address / City</div><div style="font-size:12px;color:var(--tx2)">${esc(s.line2||'—')}</div></div>
+      <div><div class="form-label">UDISE Code</div><div style="font-size:12px;color:var(--tx2)">${esc(s.line3||'—')}</div></div>
+      <div><div class="form-label">Founded</div><div style="font-size:12px;color:var(--tx2)">${esc(s.line4||'—')}</div></div>
+    </div>
+    <div style="margin-bottom:14px">
+      <div class="form-label">Academic Sessions</div>
+      <div class="session-chips">${(s.sessions||[]).map(ss=>`<span class="s-chip">${esc(ss)}</span>`).join('')}</div>
+    </div>
+    <div style="margin-bottom:14px">
+      <div class="form-label">Studio Services</div>
+      <div class="service-row"><div class="service-lbl"><span>🎓</span>Student Studio</div><span class="badge ${s.services?.student!==false?'badge-grn':'badge-red'}">${s.services?.student!==false?'● Active':'● Suspended'}</span></div>
+      <div class="service-row"><div class="service-lbl"><span>👩‍🏫</span>Teacher Studio</div><span class="badge ${s.services?.teacher!==false?'badge-grn':'badge-red'}">${s.services?.teacher!==false?'● Active':'● Suspended'}</span></div>
+    </div>
+    <div>
+      <div class="form-label">Assigned Viewers (${viewers.length})</div>
+      ${viewers.length ? viewers.map(v => `
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:rgba(255,255,255,.03);border-radius:8px;margin-bottom:5px">
+          <span style="font-size:12px;color:#fff;flex:1">${esc(v.email)}</span>
+          <span class="badge badge-teal" style="font-size:9px">${v.allowStudent?'🎓':''} ${v.allowTeacher?'👩‍🏫':''}</span>
+          <span class="badge ${v.active!==false?'badge-grn':'badge-red'}" style="font-size:9px">${v.active!==false?'Active':'Suspended'}</span>
+        </div>`).join('') : `<div style="font-size:12px;color:var(--tx3)">No viewers assigned to this school.</div>`}
+    </div>`;
+  openModal('modalSchoolDetail');
+}
+
+/* ═══════════════════════════════════════════
+   VIEWERS
+═══════════════════════════════════════════ */
+let viewerSearchQuery = '';
+let viewerSchoolFilter = '';
+
+function filterViewers(q) { viewerSearchQuery = q.toLowerCase(); renderViewers(); }
+function filterViewersBySchool(v) { viewerSchoolFilter = v; renderViewers(); }
+
+function updateViewerSchoolDropdowns() {
+  const opts = allSchools.map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');
+  document.getElementById('viewerSchool').innerHTML = '<option value="">— Select a school —</option>' + opts;
+  const filterSel = document.getElementById('viewerSchoolFilter');
+  filterSel.innerHTML = '<option value="">All Schools</option>' + opts;
+}
+
+function renderViewers() {
+  const el = document.getElementById('viewersList');
+  let list = allViewers.filter(v => {
+    const matchQ = !viewerSearchQuery ||
+      (v.email||'').toLowerCase().includes(viewerSearchQuery) ||
+      (allSchools.find(s=>s.id===v.schoolId)?.name||'').toLowerCase().includes(viewerSearchQuery);
+    const matchS = !viewerSchoolFilter || v.schoolId === viewerSchoolFilter;
+    return matchQ && matchS;
+  });
+
+  if (!list.length) {
+    el.innerHTML = `<div class="empty-state"><span class="es-icon">👁</span><div class="es-title">No Viewer Users</div><div class="es-sub">${allViewers.length?'No viewers match your search.':'Click "+ Add Viewer" to create one.'}</div></div>`;
+    return;
+  }
+
+  el.innerHTML = list.map(v => {
+    const school = allSchools.find(s => s.id === v.schoolId);
+    return `
+    <div class="viewer-row" id="vr-${esc(v.id)}">
+      <div style="width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#0f3d36,var(--teal));display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;color:#fff;flex-shrink:0">${(v.email||'?')[0].toUpperCase()}</div>
+      <div style="flex:1;min-width:0">
+        <div class="viewer-email">${esc(v.email)}</div>
+        <div class="viewer-school">🏫 ${esc(school?.name||'Unknown school')} &nbsp;·&nbsp; ${v.allowStudent?'🎓 Student ':''} ${v.allowTeacher?'👩‍🏫 Teacher':''}</div>
+      </div>
+      <span class="badge ${v.active!==false?'badge-grn':'badge-red'}">${v.active!==false?'● Active':'● Suspended'}</span>
+      <div class="viewer-actions">
+        <button class="btn btn-ghost btn-xs" onclick="toggleViewerStatus('${esc(v.id)}')">
+          ${v.active!==false?'🚫 Suspend':'✅ Enable'}
+        </button>
+        <button class="btn btn-ghost btn-xs" onclick="openResetViewerPw('${esc(v.id)}')">🔑 Reset PW</button>
+        <button class="btn btn-ghost btn-xs" onclick="editViewer('${esc(v.id)}')">✏️ Edit</button>
+        <button class="btn btn-red btn-xs" onclick="deleteViewer('${esc(v.id)}')">🗑</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openAddViewerModal() {
+  document.getElementById('modalViewerTitle').textContent = '👁 Add Viewer User';
+  document.getElementById('editViewerUid').value = '';
+  document.getElementById('viewerEmail').value = '';
+  document.getElementById('viewerPw').value = '';
+  document.getElementById('viewerAllowStudent').checked = true;
+  document.getElementById('viewerAllowTeacher').checked = true;
+  document.getElementById('viewerSchool').value = '';
+  document.getElementById('viewerPwRow').style.display = '';
+  document.getElementById('btnSaveViewer').textContent = '💾 Create Viewer';
+  document.getElementById('viewerModalMsg').style.display = 'none';
+  document.getElementById('viewerModalInfo').innerHTML =
+    'Viewer users can only access the <strong>Print tab</strong> for their assigned school. They cannot upload, edit, or use the designer.';
+  updateViewerSchoolDropdowns();
+  openModal('modalAddViewer');
+}
+
+function editViewer(id) {
+  const v = allViewers.find(x => x.id === id);
+  if (!v) return;
+  document.getElementById('modalViewerTitle').textContent = '✏️ Edit Viewer';
+  document.getElementById('editViewerUid').value = v.uid || id;
+  document.getElementById('viewerEmail').value = v.email || '';
+  document.getElementById('viewerEmail').readOnly = true;
+  document.getElementById('viewerPwRow').style.display = 'none';
+  document.getElementById('viewerAllowStudent').checked = v.allowStudent !== false;
+  document.getElementById('viewerAllowTeacher').checked = v.allowTeacher !== false;
+  document.getElementById('viewerModalMsg').style.display = 'none';
+  document.getElementById('btnSaveViewer').textContent = '💾 Update Viewer';
+  document.getElementById('viewerModalInfo').innerHTML =
+    'Update permissions for this viewer. Password can be reset separately.';
+  updateViewerSchoolDropdowns();
+  document.getElementById('viewerSchool').value = v.schoolId || '';
+  openModal('modalAddViewer');
+}
+
+async function saveViewer() {
+  const editUid  = document.getElementById('editViewerUid').value;
+  const email    = document.getElementById('viewerEmail').value.trim().toLowerCase();
+  const pw       = document.getElementById('viewerPw').value;
+  const schoolId = document.getElementById('viewerSchool').value;
+  const allowStu = document.getElementById('viewerAllowStudent').checked;
+  const allowTch = document.getElementById('viewerAllowTeacher').checked;
+
+  if (!email) { showViewerMsg('Email is required.', 'err'); return; }
+  if (!schoolId) { showViewerMsg('Assign a school first.', 'err'); return; }
+  if (!editUid && !pw) { showViewerMsg('Password is required.', 'err'); return; }
+  if (!editUid && pw.length < 6) { showViewerMsg('Password must be at least 6 characters.', 'err'); return; }
+
+  document.getElementById('btnSaveViewer').disabled = true;
+  document.getElementById('btnSaveViewer').textContent = 'Saving…';
+
+  try {
+    if (editUid) {
+      // Update permissions only
+      const docRef = allViewers.find(v => v.uid === editUid || v.id === editUid);
+      if (docRef) {
+        await db.collection('viewers').doc(docRef.id).set({
+          schoolId, allowStudent: allowStu, allowTeacher: allowTch, updatedAt: Date.now()
+        }, { merge: true });
+        const idx = allViewers.findIndex(v => v.id === docRef.id);
+        if (idx !== -1) allViewers[idx] = { ...allViewers[idx], schoolId, allowStudent: allowStu, allowTeacher: allowTch };
+        showToast('Viewer updated ✓', 'success');
+        await logAction('edit_viewer', `Updated viewer "${email}"`);
+      }
+    } else {
+      // Check if viewer already exists in Firestore (deleted viewer being re-added)
+      const existing = await db.collection('viewers').where('email','==',email).get();
+      
+      if (!existing.empty) {
+        // Re-use existing doc, just update it
+        const existingDoc = existing.docs[0];
+        const updatedData = {
+          schoolId, allowStudent: allowStu, allowTeacher: allowTch,
+          active: true, updatedAt: Date.now()
+        };
+        await db.collection('viewers').doc(existingDoc.id).set(updatedData, { merge: true });
+        allViewers = allViewers.filter(v => v.id !== existingDoc.id);
+        allViewers.push({ ...existingDoc.data(), ...updatedData });
+        showToast('Viewer re-activated ✓ · Email: ' + email, 'success');
+        await logAction('add_viewer', `Re-activated viewer "${email}"`);
+      } else {
+        // Brand new viewer — create Firebase Auth account
+        // But Auth account may already exist (previously deleted from Firestore only)
+        let uid = null;
+        try {
+          if (!secAuth) throw new Error('Secondary Firebase app not available');
+          const cred = await secAuth.createUserWithEmailAndPassword(email, pw);
+          uid = cred.user.uid;
+          await secAuth.signOut();
+        } catch(authErr) {
+          if (authErr.code === 'auth/email-already-in-use') {
+            // Auth account exists but Firestore record was deleted
+            // Sign in with provided password to get the UID
+            try {
+              const signIn = await secAuth.signInWithEmailAndPassword(email, pw);
+              uid = signIn.user.uid;
+              await secAuth.signOut();
+            } catch(signInErr) {
+              // Wrong password for existing account
+              showViewerMsg('This email already has an account. Use the correct password to re-activate, or reset it first.', 'err');
+              document.getElementById('btnSaveViewer').disabled = false;
+              document.getElementById('btnSaveViewer').textContent = '💾 Create Viewer';
+              return;
+            }
+          } else {
+            throw authErr;
+          }
+        }
+
+        const docId = 'viewer_' + Date.now();
+        const viewerData = {
+          id: docId, uid, email, schoolId,
+          allowStudent: allowStu, allowTeacher: allowTch,
+          active: true, createdAt: Date.now(), updatedAt: Date.now()
+        };
+        await db.collection('viewers').doc(docId).set(viewerData);
+        allViewers.push(viewerData);
+        showToast('Viewer created ✓ · Email: ' + email, 'success');
+        await logAction('add_viewer', `Added viewer "${email}" → school "${allSchools.find(s=>s.id===schoolId)?.name||schoolId}"`);
+      }
+    }
+
+    closeModal('modalAddViewer');
+    document.getElementById('viewerEmail').readOnly = false;
+    updateNavBadges();
+    renderViewers();
+    updateViewerSchoolDropdowns();
+  } catch(e) {
+    showViewerMsg(fbErrMsg(e), 'err');
+  }
+  document.getElementById('btnSaveViewer').disabled = false;
+  document.getElementById('btnSaveViewer').textContent = editUid ? '💾 Update Viewer' : '💾 Create Viewer';
+}
+
+function showViewerMsg(msg, type) {
+  const m = document.getElementById('viewerModalMsg');
+  m.textContent = msg; m.className = 'msg-box ' + type; m.style.display = 'block';
+}
+
+async function toggleViewerStatus(id) {
+  const v = allViewers.find(x => x.id === id);
+  if (!v) return;
+  const newActive = v.active === false ? true : false;
+  try {
+    await db.collection('viewers').doc(id).set({ active: newActive }, { merge: true });
+    v.active = newActive;
+    showToast(`Viewer ${newActive?'enabled':'suspended'}: ${v.email}`, newActive?'success':'warn');
+    await logAction(newActive?'enable_viewer':'suspend_viewer', `${newActive?'Enabled':'Suspended'} viewer "${v.email}"`);
+    renderViewers();
+  } catch(e) {
+    showToast('Update failed: ' + e.message, 'error');
+  }
+}
+
+async function deleteViewer(id) {
+  const v = allViewers.find(x => x.id === id);
+  if (!v) return;
+  if (!confirm(`Delete viewer "${v.email}"? Their Firebase Auth account will remain but access will be revoked.`)) return;
+  try {
+    await db.collection('viewers').doc(id).delete();
+    allViewers = allViewers.filter(x => x.id !== id);
+    showToast('Viewer removed ✓', 'success');
+    await logAction('delete_viewer', `Deleted viewer "${v.email}"`);
+    updateNavBadges();
+    renderViewers();
+  } catch(e) {
+    showToast('Delete failed: ' + e.message, 'error');
+  }
+}
+
+function openResetViewerPw(id) {
+  const v = allViewers.find(x => x.id === id);
+  if (!v) return;
+  pendingResetViewerData = v;
+  document.getElementById('resetPwViewerInfo').textContent = `Setting a new password for: ${v.email}`;
+  document.getElementById('newViewerPw').value = '';
+  document.getElementById('resetViewerPwMsg').style.display = 'none';
+  openModal('modalResetViewerPw');
+}
+
+async function confirmResetViewerPw() {
+  const newPw = document.getElementById('newViewerPw').value;
+  if (!newPw || newPw.length < 6) {
+    const m = document.getElementById('resetViewerPwMsg');
+    m.textContent='Password must be at least 6 characters.'; m.className='msg-box err'; m.style.display='block'; return;
+  }
+  // We use the Admin SDK approach — but since this is client-side only, we
+  // send a password reset email as the next best option.
+  try {
+    await auth.sendPasswordResetEmail(pendingResetViewerData.email);
+    showToast('Password reset email sent to ' + pendingResetViewerData.email, 'info');
+    await logAction('reset_viewer_pw', `Sent password reset email to "${pendingResetViewerData.email}"`);
+    closeModal('modalResetViewerPw');
+  } catch(e) {
+    const m = document.getElementById('resetViewerPwMsg');
+    m.textContent = fbErrMsg(e); m.className='msg-box err'; m.style.display='block';
+  }
+}
+
+/* ═══════════════════════════════════════════
+   ACTIVITY LOGS
+═══════════════════════════════════════════ */
+function renderLogs() {
+  const el = document.getElementById('logsContainer');
+  if (!allLogs.length) {
+    el.innerHTML = `<div class="empty-state"><span class="es-icon">📋</span><div class="es-title">No Activity Yet</div><div class="es-sub">Admin actions will appear here.</div></div>`;
+    return;
+  }
+  el.innerHTML = allLogs.map(l => `
+    <div class="log-item">
+      <div class="log-dot" style="background:${logColor(l.type)}"></div>
+      <div class="log-msg">${esc(l.msg)}</div>
+      <div class="log-time">${new Date(l.ts).toLocaleString('en-IN')}</div>
+    </div>`).join('');
+}
+
+async function logAction(type, msg) {
+  const entry = { type, msg, ts: Date.now(), adminEmail: currentUser?.email || '' };
+  try {
+    const docRef = await db.collection('adminLogs').add(entry);
+    allLogs.unshift({ id: docRef.id, ...entry });
+  } catch {}
+}
+
+async function clearLogs() {
+  if (!confirm('Clear all activity logs? This cannot be undone.')) return;
+  try {
+    const snap = await db.collection('adminLogs').get();
+    const batch = db.batch();
+    snap.docs.forEach(d => batch.delete(d.ref));
+    await batch.commit();
+    allLogs = [];
+    renderLogs();
+    showToast('Logs cleared', 'success');
+  } catch(e) {
+    showToast('Clear failed: ' + e.message, 'error');
+  }
+}
+
+async function confirmClearAllLogs() { await clearLogs(); }
+
+function logColor(type) {
+  const map = {
+    add_school:'#14b8a6', edit_school:'#3b82f6', delete_school:'#ef4444',
+    add_viewer:'#10b981', edit_viewer:'#3b82f6', delete_viewer:'#ef4444',
+    suspend_viewer:'#f59e0b', enable_viewer:'#10b981',
+    suspend_service:'#f59e0b', enable_service:'#10b981',
+    reset_viewer_pw:'#8b5cf6',
+    login:'#14b8a6', logout:'#94a3b8'
+  };
+  return map[type] || '#6b7280';
+}
+
+/* ═══════════════════════════════════════════
+   SETTINGS — CHANGE PASSWORD
+═══════════════════════════════════════════ */
+async function changePassword() {
+  const cur  = document.getElementById('curPw').value;
+  const nw   = document.getElementById('newPw').value;
+  const nw2  = document.getElementById('newPw2').value;
+  const msgEl = document.getElementById('settingsMsg');
+  const showSettingsMsg = (m, t) => { msgEl.textContent=m; msgEl.className='msg-box '+t; msgEl.style.display='block'; };
+  if (!cur||!nw||!nw2) { showSettingsMsg('Fill in all fields.','warn'); return; }
+  if (nw !== nw2) { showSettingsMsg('New passwords do not match.','err'); return; }
+  if (nw.length < 6) { showSettingsMsg('Password must be at least 6 characters.','warn'); return; }
+  try {
+    const cred = firebase.auth.EmailAuthProvider.credential(currentUser.email, cur);
+    await currentUser.reauthenticateWithCredential(cred);
+    await currentUser.updatePassword(nw);
+    showSettingsMsg('Password updated successfully ✓','ok');
+    document.getElementById('curPw').value=''; document.getElementById('newPw').value=''; document.getElementById('newPw2').value='';
+    await logAction('change_password', 'Admin changed their password');
+  } catch(e) {
+    showSettingsMsg(fbErrMsg(e),'err');
+  }
+}
+
+function checkPwStrength(input) {
+  const v = input.value;
+  const bar = document.getElementById('pwBar');
+  let strength = 0;
+  if (v.length >= 6) strength++;
+  if (v.length >= 10) strength++;
+  if (/[A-Z]/.test(v)) strength++;
+  if (/[0-9]/.test(v)) strength++;
+  if (/[^A-Za-z0-9]/.test(v)) strength++;
+  const w = ['0%','20%','40%','60%','80%','100%'][strength];
+  const c = ['#374151','#ef4444','#f59e0b','#eab308','#22c55e','#14b8a6'][strength];
+  bar.style.width = w; bar.style.background = c;
+}
+
+/* ═══════════════════════════════════════════
+   HELPERS
+═══════════════════════════════════════════ */
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// Close modal on backdrop click
+document.querySelectorAll('.modal-ov').forEach(m => {
+  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
+});
+
+function togglePM() { document.getElementById('profileMenu').classList.toggle('open'); }
+function closePM()  { document.getElementById('profileMenu').classList.remove('open'); }
+document.addEventListener('click', e => {
+  if (!e.target.closest('#profileBtn') && !e.target.closest('#profileMenu')) closePM();
+});
+
+function togglePw(id, btn) {
+  const inp = document.getElementById(id);
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+  btn.textContent = inp.type === 'password' ? '👁' : '🔒';
+}
+
+function togglePv() {
+  const inp = document.getElementById('viewerPw');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function timeAgo(ts) {
+  const diff = Date.now() - ts;
+  if (diff < 60000) return 'Just now';
+  if (diff < 3600000) return Math.floor(diff/60000) + 'm ago';
+  if (diff < 86400000) return Math.floor(diff/3600000) + 'h ago';
+  return Math.floor(diff/86400000) + 'd ago';
+}
+
+function fbErrMsg(e) {
+  const map = {
+    'auth/invalid-email':'Invalid email.',
+    'auth/user-not-found':'No account found.',
+    'auth/wrong-password':'Wrong password.',
+    'auth/too-many-requests':'Too many attempts — wait a moment.',
+    'auth/network-request-failed':'Network error.',
+    'auth/invalid-credential':'Wrong email or password.',
+    'auth/weak-password':'Password is too weak (min 6 chars).',
+    'auth/email-already-in-use':'An account with this email already exists.',
+    'auth/operation-not-allowed':'Operation not allowed.'
+  };
+  return map[e.code] || e.message || 'Something went wrong.';
+}
+
+function showToast(msg, type='info') {
+  const ctr = document.getElementById('toastCtr');
+  const el = document.createElement('div');
+  const icons = {success:'✓',error:'✗',warn:'⚠',info:'ℹ'};
+  el.className = `toast-item ${type}`;
+  el.innerHTML = `<span style="font-size:14px">${icons[type]||'ℹ'}</span><span>${msg}</span>`;
+  ctr.appendChild(el);
+  setTimeout(() => {
+    el.style.animation = 't-in .3s reverse';
+    setTimeout(() => el.remove(), 280);
+  }, 3500);
+}
+
+/* Keyboard */
+document.getElementById('loginPw').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+document.getElementById('loginEmail').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+document.getElementById('newSessionInput').addEventListener('keydown', e => { if(e.key==='Enter') addSessionToForm(); });
+
+/* Service toggle status label sync */
+document.getElementById('studentSvcToggle').addEventListener('change', function() {
+  document.getElementById('studentSvcStatus').textContent = this.checked ? 'ON' : 'OFF';
+  document.getElementById('studentSvcStatus').className = 'service-status ' + (this.checked ? 'on' : 'off');
+});
+document.getElementById('teacherSvcToggle').addEventListener('change', function() {
+  document.getElementById('teacherSvcStatus').textContent = this.checked ? 'ON' : 'OFF';
+  document.getElementById('teacherSvcStatus').className = 'service-status ' + (this.checked ? 'on' : 'off');
+});
+
+/* Make openModal work for buttons that use it directly */
+window.openModal = openModal;
+window.closeModal = closeModal;
+window.openAddSchool = openAddSchool;
+window.openAddViewerModal = openAddViewerModal;
+
+/* Fix: Add School / Add Viewer buttons in page headers call these */
+document.querySelector('[onclick="openModal(\'modalAddSchool\')"]').onclick = openAddSchool;
+document.querySelector('[onclick="openModal(\'modalAddViewer\')"]').onclick = openAddViewerModal;
+</script>
+</body>
+</html>
