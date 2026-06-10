@@ -581,6 +581,19 @@ input:checked+.tog-sl::before{transform:translateX(15px)}
     <div class="modal-body">
       <input type="hidden" id="editSchoolId">
       <div class="form-row"><label class="form-label">School Name *</label><input class="form-input" id="schoolName" placeholder="e.g. U.M.S. SIMRI WEST"></div>
+      <div class="form-row" id="schoolAdminEmailRow">
+  <label class="form-label">School Admin Email *</label>
+  <input class="form-input" id="schoolAdminEmail" placeholder="admin@school.edu" type="email">
+  <div class="form-hint">This email will be used to log into the School Portal.</div>
+</div>
+<div class="form-row" id="schoolAdminPwRow">
+  <label class="form-label">School Admin Password *</label>
+  <div class="inp-wrap" style="position:relative">
+    <input class="form-input" id="schoolAdminPw" placeholder="Min. 6 characters" type="password" style="padding-right:38px">
+    <button class="pw-toggle" onclick="togglePw('schoolAdminPw',this)" type="button" style="position:absolute;right:11px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--tx3);font-size:14px">👁</button>
+  </div>
+  <div class="form-hint">School admin will use this password to log in. You can reset it later.</div>
+</div>
       <div class="form-row-inline">
         <div class="form-row"><label class="form-label">City / Address</label><input class="form-input" id="schoolLine2" placeholder="e.g. Bisfi, Madhubani"></div>
         <div class="form-row"><label class="form-label">UDISE Code</label><input class="form-input" id="schoolLine3" placeholder="e.g. 10050505003"></div>
@@ -1101,12 +1114,16 @@ function openAddSchool() {
   document.getElementById('modalSchoolTitle').textContent = '🏫 Add New School';
   document.getElementById('editSchoolId').value = '';
   document.getElementById('schoolName').value = '';
+  document.getElementById('schoolAdminEmail').value = '';
+  document.getElementById('schoolAdminPw').value = '';
   document.getElementById('schoolLine2').value = '';
   document.getElementById('schoolLine3').value = '';
   document.getElementById('schoolLine4').value = '';
   document.getElementById('newSessionInput').value = '';
   document.getElementById('studentSvcToggle').checked = true;
   document.getElementById('teacherSvcToggle').checked = true;
+  document.getElementById('schoolAdminPwRow').style.display = '';
+  document.getElementById('schoolAdminEmailRow').style.display = '';
   formSessions = [currentYearSession()];
   renderSessionChips();
   openModal('modalAddSchool');
@@ -1144,11 +1161,14 @@ function editSchool(id) {
   document.getElementById('modalSchoolTitle').textContent = '✏️ Edit School';
   document.getElementById('editSchoolId').value = id;
   document.getElementById('schoolName').value = s.name || '';
+  document.getElementById('schoolAdminEmail').value = s.adminEmail || '';
   document.getElementById('schoolLine2').value = s.line2 || '';
   document.getElementById('schoolLine3').value = s.line3 || '';
   document.getElementById('schoolLine4').value = s.line4 || '';
   document.getElementById('studentSvcToggle').checked = s.services?.student !== false;
   document.getElementById('teacherSvcToggle').checked = s.services?.teacher !== false;
+  // Hide password row in edit mode — can't change auth password here
+  document.getElementById('schoolAdminPwRow').style.display = 'none';
   formSessions = [...(s.sessions || [])];
   renderSessionChips();
   openModal('modalAddSchool');
@@ -1160,13 +1180,26 @@ async function saveSchool() {
   if (!formSessions.length) { showToast('Add at least one academic session', 'warn'); return; }
 
   const editId = document.getElementById('editSchoolId').value;
+  const adminEmail = document.getElementById('schoolAdminEmail').value.trim().toLowerCase();
+  const adminPw = document.getElementById('schoolAdminPw').value;
+
+  // Validate on create
+  if (!editId) {
+    if (!adminEmail) { showToast('School admin email is required', 'warn'); return; }
+    if (!adminPw || adminPw.length < 6) { showToast('Password must be at least 6 characters', 'warn'); return; }
+  }
+
+  const saveBtn = document.querySelector('#modalAddSchool .btn-teal');
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Saving…';
+
   const data = {
     name,
     line2: document.getElementById('schoolLine2').value.trim(),
     line3: document.getElementById('schoolLine3').value.trim(),
     line4: document.getElementById('schoolLine4').value.trim(),
     sessions: formSessions,
-    adminEmail: SUPER_ADMIN_EMAIL,
+    adminEmail: editId ? (adminEmail || allSchools.find(s => s.id === editId)?.adminEmail || '') : adminEmail,
     services: {
       student: document.getElementById('studentSvcToggle').checked,
       teacher: document.getElementById('teacherSvcToggle').checked
@@ -1176,25 +1209,60 @@ async function saveSchool() {
 
   try {
     if (editId) {
+      // EDIT — just update Firestore, no auth changes
       await db.collection('schools').doc(editId).set(data, { merge: true });
       const idx = allSchools.findIndex(s => s.id === editId);
-      if (idx !== -1) allSchools[idx] = { id: editId, ...data };
+      if (idx !== -1) allSchools[idx] = { id: editId, ...allSchools[idx], ...data };
       showToast('School updated ✓', 'success');
       await logAction('edit_school', `Edited school "${name}"`);
     } else {
+      // CREATE — make Firebase Auth account for school admin
+      let uid = null;
+      if (!secAuth) throw new Error('Secondary Firebase app not available');
+      try {
+        const cred = await secAuth.createUserWithEmailAndPassword(adminEmail, adminPw);
+        uid = cred.user.uid;
+        await secAuth.signOut();
+      } catch(authErr) {
+        if (authErr.code === 'auth/email-already-in-use') {
+          showToast('This email already has an account. Use a different email or edit the existing school.', 'error');
+          saveBtn.disabled = false; saveBtn.textContent = '💾 Save School';
+          return;
+        }
+        throw authErr;
+      }
+
       const docId = 'school_' + Date.now();
-      await db.collection('schools').doc(docId).set({ id: docId, ...data });
-      allSchools.push({ id: docId, ...data });
-      showToast('School created ✓', 'success');
-      await logAction('add_school', `Added school "${name}"`);
+      const fullData = { id: docId, uid, ...data, createdAt: Date.now() };
+
+      // Save school doc
+      await db.collection('schools').doc(docId).set(fullData);
+
+      // Save admin credentials record for super admin reference
+      await db.collection('schoolAdmins').doc(uid).set({
+        uid,
+        email: adminEmail,
+        schoolId: docId,
+        schoolName: name,
+        createdAt: Date.now(),
+        createdBy: SUPER_ADMIN_EMAIL
+      });
+
+      allSchools.push(fullData);
+      showToast(`School created ✓ · Admin: ${adminEmail}`, 'success');
+      await logAction('add_school', `Added school "${name}" · Admin: ${adminEmail}`);
     }
+
     closeModal('modalAddSchool');
     updateNavBadges();
     renderSchools();
     updateViewerSchoolDropdowns();
   } catch(e) {
-    showToast('Save failed: ' + e.message, 'error');
+    showToast('Save failed: ' + fbErrMsg(e), 'error');
   }
+
+  saveBtn.disabled = false;
+  saveBtn.textContent = '💾 Save School';
 }
 
 function deleteSchool(id, name) {

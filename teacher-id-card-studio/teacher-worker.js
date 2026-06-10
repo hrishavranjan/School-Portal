@@ -456,22 +456,13 @@ body{
     <div class="info-grid">
       ${field('Employee ID',    t.EMPLOYEE_ID||code)}
       ${field('Designation',    t.DESIGNATION)}
-      ${field('Department',     t.DEPARTMENT)}
+      ${field('Subject',        t.DEPARTMENT)}
       ${field('Blood Group',    t.BLOOD_GROUP)}
       ${field('Date of Joining',t.DATE_OF_JOINING)}
       ${field('Phone No.',      t.PHONE_NO)}
-      ${field('Email',          t.EMAIL)}
-      ${field('Session',        t.SESSION)}
-      ${field('Address',        t.ADDRESS)}
     </div>
 
-    <!-- PRINCIPAL SIGNATURE — right aligned -->
-    <div class="signature-block">
-      ${hasSignature
-        ? `<img src="${sanitize(schoolCfg.signature)}" class="signature-img" alt="Signature">`
-        : '<div class="signature-line"></div>'}
-      <div class="signature-lbl">Principal</div>
-    </div>
+    
 
   </div>
 
