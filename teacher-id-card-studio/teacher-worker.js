@@ -458,7 +458,7 @@ body{
       ${field('Designation',    t.DESIGNATION)}
       ${field('Subject',        t.DEPARTMENT)}
       ${field('Blood Group',    t.BLOOD_GROUP)}
-      ${field('Date of Joining',t.DATE_OF_JOINING)}
+      ${field('Date of Birth',t.DATE_OF_JOINING)}
       ${field('Phone No.',      t.PHONE_NO)}
     </div>
 

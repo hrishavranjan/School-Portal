@@ -71,7 +71,7 @@ window.CLOUDINARY_CONFIG = { cloudName:'dbqqvmkss', uploadPreset:'Teacher-ID-Car
             const b = writeBatch(db);
             uniqueTeachers.slice(i, i+BS).forEach(t => {
               const id = (t.EMPLOYEE_ID||t.NAME||Math.random().toString(36).slice(2)).replace(/[^\w]/g,'_');
-              b.set(doc(db, cp, id), { NAME:t.NAME||'', EMPLOYEE_ID:t.EMPLOYEE_ID||'', DESIGNATION:t.DESIGNATION||'', DEPARTMENT:t.DEPARTMENT||'', BLOOD_GROUP:t.BLOOD_GROUP||'', DATE_OF_JOINING:t.DATE_OF_JOINING||'', PHONE_NO:t.PHONE_NO||'', EMAIL:t.EMAIL||'', ADDRESS:t.ADDRESS||'', SESSION:session||t.SESSION||'', SCHOOL_ID:schoolId||'', PHOTO:t.PHOTO||'', FATHER_NAME:t.FATHER_NAME||'', PERM_ADDRESS:t.PERM_ADDRESS||'', CORR_ADDRESS:t.CORR_ADDRESS||'', updatedAt:Date.now() });
+              b.set(doc(db, cp, id), { NAME:t.NAME||'', EMPLOYEE_ID:t.EMPLOYEE_ID||'', DESIGNATION:t.DESIGNATION||'', DEPARTMENT:t.DEPARTMENT||'', BLOOD_GROUP:t.BLOOD_GROUP||'', DATE_OF_BIRTH:t.DATE_OF_BIRTH||t.DATE_OF_JOINING||'', PHONE_NO:t.PHONE_NO||'', EMAIL:t.EMAIL||'', ADDRESS:t.ADDRESS||'', SESSION:session||t.SESSION||'', SCHOOL_ID:schoolId||'', PHOTO:t.PHOTO||'', FATHER_NAME:t.FATHER_NAME||'', PERM_ADDRESS:t.PERM_ADDRESS||'', CORR_ADDRESS:t.CORR_ADDRESS||'', updatedAt:Date.now() });
               saved++;
             }); await b.commit();
           }
@@ -426,7 +426,7 @@ function normKey(k){
     DESIGNATION:'DESIGNATION',POST:'DESIGNATION',ROLE:'DESIGNATION',
     DEPARTMENT:'DEPARTMENT',DEPT:'DEPARTMENT',SUBJECT:'DEPARTMENT',
     BLOODGROUP:'BLOOD_GROUP',BLOOD:'BLOOD_GROUP',BG:'BLOOD_GROUP',
-    DATEOFJOINING:'DATE_OF_JOINING',DOJ:'DATE_OF_JOINING',JOINING:'DATE_OF_JOINING',JOININGDATE:'DATE_OF_JOINING',
+    DATEOFBIRTH:'DATE_OF_JOINING',DOB:'DATE_OF_JOINING',BIRTHDATE:'DATE_OF_JOINING',DOJ:'DATE_OF_JOINING',DATEOFJOINING:'DATE_OF_JOINING',
     PHONENO:'PHONE_NO',PHONE:'PHONE_NO',MOBILE:'PHONE_NO',CONTACT:'PHONE_NO',
     EMAIL:'EMAIL',EMAILID:'EMAIL',MAIL:'EMAIL',
     ADDRESS:'ADDRESS',ADDR:'ADDRESS',
@@ -471,7 +471,7 @@ const FIELD_DEFS=[
   {key:'designation',label:'Designation',emoji:'🏅',lx:'desigLabelX',ly:'desigLabelY',vx:'desigValX',vy:'desigValY',xk:'desigX',yk:'desigY',sk:'desigFontSize',spk:'desigSpacing',ek:'desigEmoji',esk:'desigEmojiSize',exk:'desigEmojiX',eyk:'desigEmojiY',fk:'desigFont',showEk:'showDesigEmoji',showLabelKey:'showDesigLabel',showValueKey:'showDesigValue',showRowKey:'showDesigRow',labelColorKey:'desigLabelColor',valueColorKey:'desigValueColor'},
   {key:'department',label:'Subject',emoji:'📚',lx:'deptLabelX',ly:'deptLabelY',vx:'deptValX',vy:'deptValY',xk:'deptX',yk:'deptY',sk:'deptFontSize',spk:'deptSpacing',ek:'deptEmoji',esk:'deptEmojiSize',exk:'deptEmojiX',eyk:'deptEmojiY',fk:'deptFont',showEk:'showDeptEmoji',showLabelKey:'showDeptLabel',showValueKey:'showDeptValue',showRowKey:'showDeptRow',labelColorKey:'deptLabelColor',valueColorKey:'deptValueColor'},
   {key:'blood',label:'Blood Group',emoji:'🩸',lx:'bloodLabelX',ly:'bloodLabelY',vx:'bloodValX',vy:'bloodValY',xk:'bloodX',yk:'bloodY',sk:'bloodFontSize',spk:'bloodSpacing',ek:'bloodEmoji',esk:'bloodEmojiSize',exk:'bloodEmojiX',eyk:'bloodEmojiY',fk:'bloodFont',showEk:'showBloodEmoji',showLabelKey:'showBloodLabel',showValueKey:'showBloodValue',showRowKey:'showBloodRow',labelColorKey:'bloodLabelColor',valueColorKey:'bloodValueColor'},
-  {key:'doj',label:'Date of Joining',emoji:'📅',lx:'dojLabelX',ly:'dojLabelY',vx:'dojValX',vy:'dojValY',xk:'dojX',yk:'dojY',sk:'dojFontSize',spk:'dojSpacing',ek:'dojEmoji',esk:'dojEmojiSize',exk:'dojEmojiX',eyk:'dojEmojiY',fk:'dojFont',showEk:'showDojEmoji',showLabelKey:'showDojLabel',showValueKey:'showDojValue',showRowKey:'showDojRow',labelColorKey:'dojLabelColor',valueColorKey:'dojValueColor'},
+  {key:'doj',label:'D.O.B',emoji:'📅',lx:'dojLabelX',ly:'dojLabelY',vx:'dojValX',vy:'dojValY',xk:'dojX',yk:'dojY',sk:'dojFontSize',spk:'dojSpacing',ek:'dojEmoji',esk:'dojEmojiSize',exk:'dojEmojiX',eyk:'dojEmojiY',fk:'dojFont',showEk:'showDojEmoji',showLabelKey:'showDojLabel',showValueKey:'showDojValue',showRowKey:'showDojRow',labelColorKey:'dojLabelColor',valueColorKey:'dojValueColor'},
   {key:'phone',label:'Phone No.',emoji:'📞',lx:'phoneLabelX',ly:'phoneLabelY',vx:'phoneValX',vy:'phoneValY',xk:'phoneX',yk:'phoneY',sk:'phoneFontSize',spk:'phoneSpacing',ek:'phoneEmoji',esk:'phoneEmojiSize',exk:'phoneEmojiX',eyk:'phoneEmojiY',fk:'phoneFont',showEk:'showPhoneEmoji',showLabelKey:'showPhoneLabel',showValueKey:'showPhoneValue',showRowKey:'showPhoneRow',labelColorKey:'phoneLabelColor',valueColorKey:'phoneValueColor'},
   {key:'email',label:'Email',emoji:'✉️',lx:'emailLabelX',ly:'emailLabelY',vx:'emailValX',vy:'emailValY',xk:'emailX',yk:'emailY',sk:'emailFontSize',spk:'emailSpacing',ek:'emailEmoji',esk:'emailEmojiSize',exk:'emailEmojiX',eyk:'emailEmojiY',fk:'emailFont',showEk:'showEmailEmoji',showLabelKey:'showEmailLabel',showValueKey:'showEmailValue',showRowKey:'showEmailRow',labelColorKey:'emailLabelColor',valueColorKey:'emailValueColor'},
   {key:'address',label:'Address',emoji:'📍',lx:'addressLabelX',ly:'addressLabelY',vx:'addressValX',vy:'addressValY',xk:'addressX',yk:'addressY',sk:'addressFontSize',spk:'addressSpacing',ek:'addressEmoji',esk:'addressEmojiSize',exk:'addressEmojiX',eyk:'addressEmojiY',fk:'addressFont',showEk:'showAddressEmoji',showLabelKey:'showAddressLabel',showValueKey:'showAddressValue',showRowKey:'showAddressRow',labelColorKey:'addressLabelColor',valueColorKey:'addressValueColor'},
@@ -516,7 +516,7 @@ sessionLabelColor:'',sessionValueColor:'',sessionEmoji:'📅',
   desigX:0,desigY:0,desigFontSize:FIXED_TEXT_SIZE,desigSpacing:0,desigEmoji:'🏅',desigEmojiSize:FIXED_EMOJI_SIZE,desigEmojiX:0,desigEmojiY:0,desigFont:'',
   deptX:0,deptY:0,deptFontSize:FIXED_TEXT_SIZE,deptSpacing:0,deptEmoji:'📚',deptEmojiSize:FIXED_EMOJI_SIZE,deptEmojiX:0,deptEmojiY:0,deptFont:'',
   bloodX:0,bloodY:0,bloodFontSize:FIXED_TEXT_SIZE,bloodSpacing:0,bloodEmoji:'🩸',bloodEmojiSize:FIXED_EMOJI_SIZE,bloodEmojiX:0,bloodEmojiY:0,bloodFont:'',
-  dojX:0,dojY:0,dojFontSize:FIXED_TEXT_SIZE,dojSpacing:0,dojEmoji:'📅',dojEmojiSize:FIXED_EMOJI_SIZE,dojEmojiX:0,dojEmojiY:0,dojFont:'',
+  dojX:0,dojY:0,dojFontSize:FIXED_TEXT_SIZE,dojSpacing:0,dojEmoji:'🎂',dojEmojiSize:FIXED_EMOJI_SIZE,dojEmojiX:0,dojEmojiY:0,dojFont:'',
   phoneX:0,phoneY:0,phoneFontSize:FIXED_TEXT_SIZE,phoneSpacing:0,phoneEmoji:'📞',phoneEmojiSize:FIXED_EMOJI_SIZE,phoneEmojiX:0,phoneEmojiY:0,phoneFont:'',
   emailX:0,emailY:0,emailFontSize:FIXED_TEXT_SIZE,emailSpacing:0,emailEmoji:'✉️',emailEmojiSize:FIXED_EMOJI_SIZE,emailEmojiX:0,emailEmojiY:0,emailFont:'',
   addressX:0,addressY:0,addressFontSize:FIXED_TEXT_SIZE,addressSpacing:0,addressEmoji:'📍',addressEmojiSize:FIXED_EMOJI_SIZE,addressEmojiX:0,addressEmojiY:0,addressFont:'',
@@ -1403,7 +1403,7 @@ function VerifyPage({teacher,cfg,templateImage,onClose}){
         <div style={{padding:18}}>
           <div style={{display:'flex',justifyContent:'center',marginBottom:14}}><IDCard s={teacher} cfg={cfg} scale={0.85} templateImage={templateImage}/></div>
           <div className="verify-grid">
-            {[['Name',teacher.NAME],['Employee ID',teacher.EMPLOYEE_ID],['Designation',teacher.DESIGNATION],['Department',teacher.DEPARTMENT],['Blood Group',teacher.BLOOD_GROUP],['Date of Joining',teacher.DATE_OF_JOINING],['Phone No.',teacher.PHONE_NO],['Email',teacher.EMAIL],['Session',teacher.SESSION||'']].map(([l,v])=>(<div className="verify-field" key={l}><div className="verify-field-lbl">{l}</div><div className="verify-field-val">{v||'—'}</div></div>))}
+            {[['Name',teacher.NAME],['Employee ID',teacher.EMPLOYEE_ID],['Designation',teacher.DESIGNATION],['Department',teacher.DEPARTMENT],['Blood Group',teacher.BLOOD_GROUP],['Date of Birth',teacher.DATE_OF_JOINING],['Phone No.',teacher.PHONE_NO],['Email',teacher.EMAIL],['Session',teacher.SESSION||'']].map(([l,v])=>(<div className="verify-field" key={l}><div className="verify-field-lbl">{l}</div><div className="verify-field-val">{v||'—'}</div></div>))}
           </div>
           {teacher.ADDRESS&&<div className="verify-field" style={{marginBottom:10}}><div className="verify-field-lbl">Address</div><div className="verify-field-val" style={{fontSize:11,whiteSpace:'normal'}}>{teacher.ADDRESS}</div></div>}
           <div style={{background:'linear-gradient(135deg,#ecfdf5,#d1fae5)',border:'2px solid #10b981',borderRadius:8,padding:12,textAlign:'center'}}><div style={{fontSize:15,fontWeight:900,color:'#065f46',fontFamily:"'Barlow Condensed',sans-serif"}}>✅ TEACHER ID CARD VERIFIED</div></div>
@@ -2656,7 +2656,7 @@ function App(){
                           {t.PHOTO?<img src={t.PHOTO} style={{width:36,height:36,borderRadius:'50%',objectFit:'cover',border:'2px solid #0f3d36',flexShrink:0}} alt="" crossOrigin="anonymous"/>:<div style={{width:36,height:36,borderRadius:'50%',background:'#99f6e4',border:'2px solid #0f3d36',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>👤</div>}
                           <div style={{flex:1,minWidth:0}}><div className="s-name">{t.NAME}</div><div className="s-meta">{t.DESIGNATION||'—'} · {t.DEPARTMENT||'—'}</div></div>
                         </div>
-                        <div className="s-meta" style={{lineHeight:1.7}}>ID: {t.EMPLOYEE_ID||'—'} · Blood: {t.BLOOD_GROUP||'—'}<br/>DOJ: {t.DATE_OF_JOINING||'—'}</div>
+                        <div className="s-meta" style={{lineHeight:1.7}}>ID: {t.EMPLOYEE_ID||'—'} · Blood: {t.BLOOD_GROUP||'—'}<br/>DOB: {t.DATE_OF_JOINING||'—'}</div>
                         {t._issues?.map((iss,j)=>(<span key={j} className="badge badge-r">{iss}</span>))}
                         {t._ok&&<span className="badge badge-g">✓ Valid</span>}
                         {hasOverride(t)&&<span className="badge badge-p">⚙ Custom</span>}
