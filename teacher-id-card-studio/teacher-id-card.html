@@ -1410,47 +1410,40 @@ function VerifyPage({teacher,cfg,templateImage,onClose}){
 
 /* ── Print Page ── */
 function PrintPage({teachers,cfg,cardOverrides,bw,templateImage,backTemplateImage,printSide='both'}){
+  const pageStyle={filter:bw?'grayscale(1)':'none',display:'flex',flexWrap:'wrap',gap:3,alignContent:'flex-start',padding:'4mm',background:'#fff',width:'794px'};
   if(printSide==='front'){
     return(
-      <div className="preview-page" style={{filter:bw?'grayscale(1)':'none',display:'flex',flexWrap:'wrap',gap:10,alignContent:'flex-start',padding:'7mm'}}>
+      <div className="preview-page" style={pageStyle}>
         {teachers.map((t,i)=>{
           const key=t.EMPLOYEE_ID||t.NAME||i;
           const over=(cardOverrides&&cardOverrides[key])||{};
-          return(
-            <div key={i} style={{margin:'3.5mm'}}>
-              <IDCard s={t} cfg={cfg} cfgOverride={over} templateImage={templateImage}/>
-            </div>
-          );
+          return(<div key={i} style={{margin:'1.5mm'}}><IDCard s={t} cfg={cfg} cfgOverride={over} templateImage={templateImage}/></div>);
         })}
       </div>
     );
   }
   if(printSide==='back'){
     return(
-      <div className="preview-page" style={{filter:bw?'grayscale(1)':'none',display:'flex',flexWrap:'wrap',gap:10,alignContent:'flex-start',padding:'7mm'}}>
+      <div className="preview-page" style={pageStyle}>
         {teachers.map((t,i)=>{
           const key=t.EMPLOYEE_ID||t.NAME||i;
           const over=(cardOverrides&&cardOverrides[key])||{};
-          return(
-            <div key={i} style={{margin:'3.5mm'}}>
-              <IDCardBack s={t} cfg={cfg} cfgOverride={over} templateImage={backTemplateImage}/>
-            </div>
-          );
+          return(<div key={i} style={{margin:'1.5mm'}}><IDCardBack s={t} cfg={cfg} cfgOverride={over} templateImage={backTemplateImage}/></div>);
         })}
       </div>
     );
   }
   return(
-    <div className="preview-page" style={{filter:bw?'grayscale(1)':'none',display:'flex',flexWrap:'wrap',gap:10,alignContent:'flex-start',padding:'7mm'}}>
+    <div className="preview-page" style={pageStyle}>
       {teachers.map((t,i)=>{
         const key=t.EMPLOYEE_ID||t.NAME||i;
         const over=(cardOverrides&&cardOverrides[key])||{};
         return(
           <React.Fragment key={i}>
-            <div style={{margin:'3.5mm'}}>
+            <div style={{margin:'1.5mm',display:'inline-block'}}>
               <IDCard s={t} cfg={cfg} cfgOverride={over} templateImage={templateImage}/>
             </div>
-            <div style={{margin:'3.5mm'}}>
+            <div style={{margin:'1.5mm',display:'inline-block'}}>
               <IDCardBack s={t} cfg={cfg} cfgOverride={over} templateImage={backTemplateImage}/>
             </div>
           </React.Fragment>
@@ -1520,7 +1513,7 @@ function App(){
   const sbScrollRef=useRef(0);
 
   const PER=24;
-  const CARDS_PP=printSide==='both'?{A4:3,A3:6,A2:12,A1:24}[sheetSize]||3:{A4:9,A3:18,A2:36,A1:72}[sheetSize]||9;
+  const CARDS_PP=printSide==='both'?{A4:4,A3:8,A2:16,A1:32}[sheetSize]||4:{A4:9,A3:18,A2:36,A1:72}[sheetSize]||9;
   const teacherKey=t=>t.EMPLOYEE_ID||t.NAME||Math.random().toString(36).slice(2);
 
   useEffect(()=>{hideLoader();},[]);
