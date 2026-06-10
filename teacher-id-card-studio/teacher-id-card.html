@@ -765,7 +765,7 @@ function FieldRow({emoji,showEmoji=true,labelText,showLabel=true,value,showValue
         <span style={{fontSize:fontSize*scale,fontWeight:700,color:labelColor,fontFamily:fieldFont,whiteSpace:'nowrap',flexShrink:0,display:'inline-block',letterSpacing:`${letterSpacing}px`,position:'relative',left:lblX*scale,top:lblY*scale}}>{labelText}:</span>
       )}
       {showValue&&(
-        <span style={{fontSize:fontSize*scale,fontWeight:600,color:fieldColor,fontFamily:fieldFont,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:wrap?'normal':'nowrap',marginLeft:showLabel?1*scale:0,letterSpacing:`${letterSpacing}px`,display:'inline-block',position:'relative',left:valX*scale,top:valY*scale}}>{value||'—'}</span>
+        <span style={{fontSize:fontSize*scale,fontWeight:600,color:fieldColor,fontFamily:fieldFont,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:wrap?'normal':'nowrap',marginLeft:showLabel?1*scale:0,letterSpacing:`${letterSpacing}px`,display:'inline-block',position:'relative',left:valX*scale,top:valY*scale}}>{value||''}</span>
       )}
     </div>
   );
@@ -1901,7 +1901,7 @@ function App(){
   function downloadExcel(){
     if(!teachers.length){showToast('No teachers to export','w');return;}
     if(!window.XLSX){showToast('Excel library loading…','w');return;}
-    const data=teachers.map(t=>({NAME:t.NAME||'',EMPLOYEE_ID:t.EMPLOYEE_ID||'',DESIGNATION:t.DESIGNATION||'',DEPARTMENT:t.DEPARTMENT||'',BLOOD_GROUP:t.BLOOD_GROUP||'',DATE_OF_JOINING:t.DATE_OF_JOINING||'',PHONE_NO:t.PHONE_NO||'',EMAIL:t.EMAIL||'',ADDRESS:t.ADDRESS||'',SESSION:t.SESSION||activeSession||'',PHOTO:t.PHOTO||''}));
+    const data=teachers.map(t=>({NAME:t.NAME||'',EMPLOYEE_ID:t.EMPLOYEE_ID||'',DESIGNATION:t.DESIGNATION||'',DEPARTMENT:t.DEPARTMENT||'',BLOOD_GROUP:t.BLOOD_GROUP||'',DATE_OF_JOINING:t.DATE_OF_JOINING||'',PHONE_NO:t.PHONE_NO||'',EMAIL:t.EMAIL||'',ADDRESS:t.ADDRESS||'',FATHER_NAME:t.FATHER_NAME||'',PERM_ADDRESS:t.PERM_ADDRESS||'',CORR_ADDRESS:t.CORR_ADDRESS||'',SESSION:t.SESSION||activeSession||'',PHOTO:t.PHOTO||''}));
     const ws=XLSX.utils.json_to_sheet(data);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Teachers');
     XLSX.writeFile(wb,`${currentSchool?.name||'school'}_${activeSession||'session'}_teachers.xlsx`);
     showToast('Excel downloaded ✓','s');
