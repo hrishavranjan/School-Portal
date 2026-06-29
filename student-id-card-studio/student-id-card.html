@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;700;800;900&family=Barlow+Condensed:wght@400;600;700;800;900&family=Bebas+Neue&family=Oswald:wght@400;600;700&family=Raleway:wght@700;800;900&family=Nunito:wght@700;900&family=Poppins:wght@600;700;900&family=Anton&family=Russo+One&family=Exo+2:wght@700;900&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js" data-presets="react"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -20,8 +20,9 @@
 window.CLOUDINARY_CONFIG = { cloudName:'dbqqvmkss', uploadPreset:'Student-ID-Card', folder:'school-id-cards/students' };
 </script>
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getFirestore, collection, doc, getDocs, deleteDoc, writeBatch, setDoc, getDoc, updateDoc, query, where } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+(async () => {
+  const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
+  const { getFirestore, collection, doc, getDocs, deleteDoc, writeBatch, setDoc, getDoc, updateDoc, query, where } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
   const firebaseConfig = {
   apiKey:"AIzaSyCKjBisAbjBrqLgMiIGVrXipypvpL1BLFw",
   authDomain:"id-card-studio-coex.firebaseapp.com",
@@ -188,6 +189,7 @@ window.CLOUDINARY_CONFIG = { cloudName:'dbqqvmkss', uploadPreset:'Student-ID-Car
     };
     init();
   }
+})();
 </script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -447,7 +449,7 @@ input:checked+.tog-sl:before{transform:translateX(15px)}
 <div id="root"></div>
 <div id="toast-root" style="position:fixed;top:10px;right:10px;z-index:9999;display:flex;flex-direction:column;gap:5px;pointer-events:none"></div>
 
-<script type="text/babel" data-presets="react">
+<script type="text/babel" data-type="module" data-presets="react"></script>
 const {useState,useEffect,useRef,useMemo,useCallback,memo}=React;
 
 function hideLoader(){const el=document.getElementById('app-loading');if(el){el.style.opacity='0';setTimeout(()=>el.remove(),420);}}
