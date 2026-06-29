@@ -367,8 +367,7 @@ input:checked+.tog-sl:before{transform:translateX(15px)}
 </div>
 <div id="root"></div>
 <div id="toast-root" style="position:fixed;top:10px;right:10px;z-index:9999;display:flex;flex-direction:column;gap:5px;pointer-events:none"></div>
-
-<script type="text/babel" data-presets="react">
+<script type="text/babel">
 const {useState,useEffect,useRef,useMemo,useCallback,memo}=React;
 
 const LS_SCHOOLS='ums_teacher_schools_v1';
@@ -2904,7 +2903,6 @@ onClick={e=>{
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 </script>
-
 <script>
 window._adminEmail='';
 window._singleSchoolMode=false;
