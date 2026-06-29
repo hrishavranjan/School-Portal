@@ -1345,13 +1345,13 @@ useEffect(()=>{
 },[]);
 
   const saveSchools=useCallback(async(updated)=>{
-    setSchools(updated);
-    if(fbOk&&window.fbSaveOneSchool){
-  for(const s of updated){
-    try{await window.fbSaveOneSchool({...s,adminEmail:window._adminEmail||''});}catch(e){console.warn('School save err',e);}
+  setSchools(updated);
+  if(fbOk&&window.fbSaveOneSchool){
+    for(const s of updated){
+      try{await window.fbSaveOneSchool({...s,adminEmail:window._adminEmail||''});}catch(e){console.warn('School save err',e);}
+    }
   }
-}
-  },[fbOk]);
+},[fbOk]);
 
   const saveCfgToFirebase=useCallback(async()=>{
     if(!fbOk||!activeSchool){showToast('Connect Firebase first','e');return;}
@@ -2022,7 +2022,6 @@ window._singleSchoolMode=false;
 window.addEventListener('message',function(e){
   if(e.data&&e.data.type==='setAdminEmail'){
     const newEmail=e.data.email||'';
-    // Ignore duplicate messages with same email
     if(window._adminEmail===newEmail&&window._adminEmailReady)return;
     window._adminEmail=newEmail;
     window._adminEmailReady=true;
@@ -2030,7 +2029,6 @@ window.addEventListener('message',function(e){
     const tryLoad=()=>{
       if(window.fbLoadSchools&&window._fbReady){
         window.fbLoadSchools(window._adminEmail).then(function(schools){
-          // Fix any existing schools missing adminEmail
           if(window.fbSaveOneSchool&&schools&&schools.length){
             schools.forEach(function(s){
               if(!s.adminEmail&&window._adminEmail){
