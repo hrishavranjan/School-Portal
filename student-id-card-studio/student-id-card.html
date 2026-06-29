@@ -449,7 +449,7 @@ input:checked+.tog-sl:before{transform:translateX(15px)}
 <div id="root"></div>
 <div id="toast-root" style="position:fixed;top:10px;right:10px;z-index:9999;display:flex;flex-direction:column;gap:5px;pointer-events:none"></div>
 
-<script type="text/babel" data-type="module" data-presets="react"></script>
+<script type="text/babel" data-presets="react">
 const {useState,useEffect,useRef,useMemo,useCallback,memo}=React;
 
 function hideLoader(){const el=document.getElementById('app-loading');if(el){el.style.opacity='0';setTimeout(()=>el.remove(),420);}}
