@@ -60,22 +60,36 @@ window.CLOUDINARY_CONFIG = { cloudName:'dbqqvmkss', uploadPreset:'Teacher-ID-Car
         const colPath = (schoolId, session) => `schools/${encodeURIComponent(schoolId)}/sessions/${encodeURIComponent(session)}/teachers`;
         window.fbSave = async (teachers, schoolId, session) => {
           const cp = colPath(schoolId, session); const BS = 400;
-          let saved = 0; let rejected = 0;
+          // Load existing records first so we can compare
+          const existingSnap = await getDocs(collection(db, cp));
+          const existingMap = new Map();
+          existingSnap.docs.forEach(d => existingMap.set(d.id, d.data()));
+
+          const FIELDS = ['NAME','EMPLOYEE_ID','DESIGNATION','DEPARTMENT','BLOOD_GROUP','DATE_OF_JOINING','PHONE_NO','EMAIL','ADDRESS','FATHER_NAME','PERM_ADDRESS','CORR_ADDRESS','PHOTO'];
+          const buildRecord = (t) => ({ NAME:t.NAME||'', EMPLOYEE_ID:t.EMPLOYEE_ID||'', DESIGNATION:t.DESIGNATION||'', DEPARTMENT:t.DEPARTMENT||'', BLOOD_GROUP:t.BLOOD_GROUP||'', DATE_OF_JOINING:t.DATE_OF_JOINING||'', PHONE_NO:t.PHONE_NO||'', EMAIL:t.EMAIL||'', ADDRESS:t.ADDRESS||'', SESSION:session||t.SESSION||'', SCHOOL_ID:schoolId||'', PHOTO:t.PHOTO||'', FATHER_NAME:t.FATHER_NAME||'', PERM_ADDRESS:t.PERM_ADDRESS||'', CORR_ADDRESS:t.CORR_ADDRESS||'', updatedAt:Date.now() });
+          const hasChanged = (oldRec, newRec) => FIELDS.some(f => (oldRec?.[f]||'') !== (newRec?.[f]||''));
+
+          let added = 0, updated = 0, unchanged = 0, rejected = 0;
           const seen = new Set();
-          const uniqueTeachers = teachers.filter(t => {
+          const toWrite = [];
+
+          teachers.forEach(t => {
             const id = (t.EMPLOYEE_ID||t.NAME||'').replace(/[^\w]/g,'_');
-            if(!id || seen.has(id)){ rejected++; return false; }
-            seen.add(id); return true;
+            if (!id || seen.has(id)) { rejected++; return; }
+            seen.add(id);
+            const newRec = buildRecord(t);
+            const oldRec = existingMap.get(id);
+            if (!oldRec) { added++; toWrite.push([id, newRec]); }
+            else if (hasChanged(oldRec, newRec)) { updated++; toWrite.push([id, newRec]); }
+            else { unchanged++; }
           });
-          for (let i = 0; i < uniqueTeachers.length; i += BS) {
+
+          for (let i = 0; i < toWrite.length; i += BS) {
             const b = writeBatch(db);
-            uniqueTeachers.slice(i, i+BS).forEach(t => {
-              const id = (t.EMPLOYEE_ID||t.NAME||Math.random().toString(36).slice(2)).replace(/[^\w]/g,'_');
-              b.set(doc(db, cp, id), { NAME:t.NAME||'', EMPLOYEE_ID:t.EMPLOYEE_ID||'', DESIGNATION:t.DESIGNATION||'', DEPARTMENT:t.DEPARTMENT||'', BLOOD_GROUP:t.BLOOD_GROUP||'', DATE_OF_BIRTH:t.DATE_OF_BIRTH||t.DATE_OF_JOINING||'', PHONE_NO:t.PHONE_NO||'', EMAIL:t.EMAIL||'', ADDRESS:t.ADDRESS||'', SESSION:session||t.SESSION||'', SCHOOL_ID:schoolId||'', PHOTO:t.PHOTO||'', FATHER_NAME:t.FATHER_NAME||'', PERM_ADDRESS:t.PERM_ADDRESS||'', CORR_ADDRESS:t.CORR_ADDRESS||'', updatedAt:Date.now() });
-              saved++;
-            }); await b.commit();
+            toWrite.slice(i, i+BS).forEach(([id, rec]) => { b.set(doc(db, cp, id), rec); });
+            await b.commit();
           }
-          return { saved, rejected };
+          return { added, updated, unchanged, rejected, saved: added + updated };
         };
         window.fbSaveOneTeacher = async (teacher, schoolId, session) => {
           const cp = colPath(schoolId, session);
@@ -1846,7 +1860,7 @@ function App(){
         if(window.fbSave&&window._fbReady){
           try{
             const result=await window.fbSave(rawTeachers,activeSchool,activeSession);
-            showToast(`☁️ Saved: ${result.saved} · Rejected (duplicate): ${result.rejected}`,'s');
+            showToast(`☁️ Added: ${result.added} · Updated: ${result.updated} · Unchanged: ${result.unchanged}${result.rejected?` · Duplicate skipped: ${result.rejected}`:''}`,'s');
           }catch(e){showToast('Auto-save to Firebase failed: '+e.message,'w');}
         }
         
@@ -1862,7 +1876,7 @@ function App(){
     if(!fbOk){showToast('Firebase not connected','e');return;}
     if(!teachers.length){showToast('No teachers to save','w');return;}
     setIsSaving(true);
-    try{const result=await window.fbSave(teachers,activeSchool,activeSession);await refreshFBCount();showToast(`☁️ Saved: ${result.saved} · Rejected (duplicate): ${result.rejected}`,'s');}
+    try{const result=await window.fbSave(teachers,activeSchool,activeSession);await refreshFBCount();showToast(`☁️ Added: ${result.added} · Updated: ${result.updated} · Unchanged: ${result.unchanged}${result.rejected?` · Duplicate skipped: ${result.rejected}`:''}`,'s');}
     catch(e){showToast('Save failed: '+e.message,'e');}
     setIsSaving(false);
   };
