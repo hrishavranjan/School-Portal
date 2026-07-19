@@ -13,7 +13,7 @@
 .studio-back-btn{display:flex;align-items:center;gap:6px;padding:5px 12px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:rgba(255,255,255,.7);font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;font-family:'Space Grotesk',sans-serif;white-space:nowrap;flex-shrink:0}
 .studio-back-btn:hover{background:rgba(255,255,255,.15);color:#fff}
 :root{
-  --ink:#0a0f1e;
+  --ink:#161d2e;
   --teal-d:#0f3d36;
   --teal-m:#0f766e;
   --teal-l:#14b8a6;
@@ -213,7 +213,10 @@ body{font-family:'Space Grotesk',sans-serif;background:var(--ink);min-height:100
 .btn-ghost-sm:hover{background:rgba(255,255,255,.05);color:#fff}
 
 /* ── TOAST ── */
-.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:600;background:rgba(10,15,30,.97);backdrop-filter:blur(16px);border:1px solid rgba(239,68,68,.28);border-radius:11px;padding:11px 18px;color:#fca5a5;font-size:13px;font-weight:600;box-shadow:0 7px 28px rgba(0,0,0,.5);display:none;white-space:nowrap}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:600;background:rgba(10,15,30,.97);backdrop-filter:blur(16px);border-radius:11px;padding:11px 18px;font-size:13px;font-weight:600;box-shadow:0 7px 28px rgba(0,0,0,.5);display:none;white-space:nowrap}
+.toast.error{border:1px solid rgba(239,68,68,.28);color:#fca5a5}
+.toast.success{border:1px solid rgba(20,184,166,.35);color:#5eead4}
+.toast.info{border:1px solid rgba(59,130,246,.35);color:#93c5fd}
 
 .credit-bar{text-align:center;padding:7px;font-size:10px;color:rgba(255,255,255,.18);flex-shrink:0;border-top:1px solid rgba(255,255,255,.04)}
 .credit-bar strong{color:rgba(255,255,255,.36)}
@@ -402,17 +405,18 @@ body{font-family:'Space Grotesk',sans-serif;background:var(--ink);min-height:100
         <div class="sc-arrow">→</div>
       </div>
 
-      <<!-- Student Appar ID -->
+      <!-- Student Appar ID -->
       <div class="studio-card apparel" onclick="openStudio('apparel')">
         <div style="display:flex;align-items:flex-start;gap:14px">
-          <div class="sc-icon-wrap">👕</div>
+          <div class="sc-icon-wrap">🪪</div>
           <div class="sc-info">
             <div class="sc-title">Student Appar ID</div>
-            <div class="sc-desc">Design custom school uniform tags, badges, and Appar ID labels with school branding and student details.</div>
+            <div class="sc-desc">Generate and print student Appar ID cards, ID number, class & guardian details, and QR verification.</div>
             <div class="sc-tags">
-              <span class="sc-tag">Uniform Tags</span>
-              <span class="sc-tag">Badges</span>
-              <span class="sc-tag">Labels</span>
+              <span class="sc-tag">Templates</span>
+              <span class="sc-tag">School Code</span>
+              <span class="sc-tag">QR Verify</span>
+              <span class="sc-tag">PDF Export</span>
             </div>
           </div>
         </div>
@@ -570,6 +574,7 @@ document.getElementById('welcomeName').textContent = schoolName;
         await auth.signOut();
         showLogin();
         showMsg('Your viewer access has been suspended. Contact your administrator.','error');
+        showToast('Viewer access suspended','error');
         return;
       }
       document.getElementById('loginPage').style.display='none';
@@ -592,10 +597,11 @@ document.getElementById('welcomeName').textContent = schoolName;
     }
   }catch(e){console.warn('Viewer check error',e);}
 
-  // No matching account found — deny access
+ // No matching account found — deny access
   await auth.signOut();
   showLogin();
   showMsg('Access denied. Your account is not registered.','error');
+  showToast('Access denied — account not registered','error');
 }
   
 
@@ -718,6 +724,7 @@ async function loadDashboardStats(){
     document.getElementById('statSchools').textContent='—';
     document.getElementById('statStudents').textContent='—';
     document.getElementById('statTeachers').textContent='—';
+    showToast('Could not load dashboard stats','error');
   }
 }
     
@@ -831,10 +838,14 @@ function openStudio(type){
     bar.appendChild(sep);
 
     /* ── Tab buttons ── */
-    const tabs=type==='student'
-      ?[['upload','📤 Upload'],['students','🎓 Students'],['designer','🎨 Designer'],['preview','🖨️ Print']]
-      :[['upload','📤 Upload'],['teachers','👩‍🏫 Teachers'],['designer','🎨 Designer'],['preview','🖨️ Print']];
-    tabs.forEach(([k,lbl])=>{
+    const tabDefs={
+      student:[['upload','📤 Upload'],['students','🎓 Students'],['designer','🎨 Designer'],['preview','🖨️ Print']],
+      teacher:[['upload','📤 Upload'],['teachers','👩‍🏫 Teachers'],['designer','🎨 Designer'],['preview','🖨️ Print']],
+      certificate:[['types','🎴 Types'],['designer','🎨 Designer'],['create','✍️ Create'],['history','📜 History']],
+      apparel:[['upload','📤 Upload'],['students','🎓 Students'],['designer','🎨 Designer'],['preview','🖨️ Print']]
+    };
+    const tabs=tabDefs[type]||tabDefs.teacher;
+    tabs.forEach(([k,lbl],idx)=>{
       const btn=document.createElement('button');
       btn.className='studio-tab-btn';
       btn.textContent=lbl;
@@ -843,7 +854,7 @@ function openStudio(type){
         bar.querySelectorAll('.studio-tab-btn').forEach(b=>b.classList.remove('active'));
         btn.classList.add('active');
       };
-      if(k==='upload')btn.classList.add('active');
+      if(idx===0)btn.classList.add('active');
       bar.appendChild(btn);
     });
 
@@ -879,6 +890,7 @@ function openStudio(type){
         <div style="color:#fca5a5;font-weight:700;font-size:14px">Failed to load ${nameMap[type]}</div>
         <div style="color:rgba(255,255,255,.38);font-size:11px">Check that the file exists at: <code style="color:#5eead4">${fileMap[type]}</code></div>
       </div>`;
+    showToast(`Failed to load ${nameMap[type]}`,'error');
   };
 
   /* ── Append iframe to wrap (this triggers the load) ── */
@@ -893,8 +905,10 @@ async function doLogin(){
   setLoading(true);
   try{
     await auth.signInWithEmailAndPassword(email,pw);
+    showToast('✓ Signed in successfully','success');
   }catch(e){
     showMsg(firebaseErrMsg(e),'error');
+    showToast(firebaseErrMsg(e),'error');
     setLoading(false);
   }
 }
@@ -911,7 +925,11 @@ async function doForgotInline(e){
   try{
     await auth.sendPasswordResetEmail(email);
     showMsg(`✓ Reset link sent to <strong>${esc(email)}</strong><br><span class="spam-note">📌 Check your <strong>Spam / Junk</strong> folder.</span>`,'success',true);
-  }catch(err){showMsg(firebaseErrMsg(err),'error');}
+    showToast('✓ Reset link sent — check your inbox','success');
+  }catch(err){
+    showMsg(firebaseErrMsg(err),'error');
+    showToast(firebaseErrMsg(err),'error');
+  }
 }
 
 async function doLogout(){
@@ -920,6 +938,7 @@ async function doLogout(){
   window._viewerSchoolId=null;
   window._viewerPrintOnly=false;
   await auth.signOut();showLogin();
+  showToast('You have been logged out','info');
 }
 
 /* ── PORTAL RESET PW ── */
@@ -937,8 +956,12 @@ async function doPortalResetPw(){
     const m=document.getElementById('portalResetMsg');
     m.innerHTML='✓ Reset link sent! Check your inbox &amp; <strong>spam folder</strong>.';
     m.className='msg success';m.style.display='block';
+    showToast('✓ Reset link sent','success');
     setTimeout(()=>closeModal('modalPortalReset'),3000);
-  }catch(err){showPortalResetMsg(firebaseErrMsg(err),'error');}
+  }catch(err){
+    showPortalResetMsg(firebaseErrMsg(err),'error');
+    showToast(firebaseErrMsg(err),'error');
+  }
 }
 function showPortalResetMsg(msg,type){
   const m=document.getElementById('portalResetMsg');m.textContent=msg;m.className='msg '+type;m.style.display='block';
@@ -991,8 +1014,11 @@ function closeModal(id){document.getElementById(id).classList.remove('open');}
 document.querySelectorAll('.modal-overlay').forEach(m=>{m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');});});
 
 /* ── TOAST ── */
-function showToast(msg){
-  const t=document.getElementById('toast');t.textContent=msg;t.style.display='block';
+function showToast(msg,type='error'){
+  const t=document.getElementById('toast');
+  t.textContent=msg;
+  t.className='toast '+type;
+  t.style.display='block';
   setTimeout(()=>{t.style.display='none'},3200);
 }
 

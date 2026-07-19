@@ -180,6 +180,7 @@ body{font-family:'Raleway',sans-serif;background:linear-gradient(135deg,var(--bg
 .ctx-sel option{background:var(--navy);color:#fff}
 .ctx-btn{padding:3px 9px;border-radius:5px;font-size:9.5px;font-weight:700;cursor:pointer;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.1);color:#fff;font-family:'Raleway',sans-serif;transition:all .15s}
 .ctx-btn:hover{background:rgba(255,255,255,.2)}
+.context-bar .fb-pill{padding:2px 9px;font-size:8.5px;flex-shrink:0}
 
 .app-body{display:flex;flex:1;overflow:hidden}
 .main{flex:1;overflow-y:auto;padding:22px 26px}
@@ -796,11 +797,28 @@ function CreateTab({certTypes,onGenerated,fbOk,verifyBaseUrl,verifyParam,onBack}
   const [pickedId,setPickedId]=useState(certTypes[0]?.id||null);
   const [values,setValues]=useState({});
   const [generated,setGenerated]=useState(null);
+  const [overrides,setOverrides]=useState({});
+  const [selected,setSelected]=useState(null);
   const certType=certTypes.find(c=>c.id===pickedId);
   const certRef=useRef();
   const printRef=useRef();
 
-  useEffect(()=>{ setValues({}); setGenerated(null); },[pickedId]);
+  const mergedCertType=useMemo(()=>{
+    if(!certType) return null;
+    return {
+      ...certType,
+      labels:(certType.labels||[]).map(l=>({...l,style:{...l.style,...(overrides[l.id]||{})}})),
+      qr:{...(certType.qr||DEFAULT_QR),...(overrides.__qr__||{})},
+      idText:{...(certType.idText||DEFAULT_IDTEXT),...(overrides.__idtext__||{})}
+    };
+  },[certType,overrides]);
+
+  const updateOverrideLabel=(id,patch)=>setOverrides(p=>({...p,[id]:{...p[id],...patch}}));
+  const updateOverrideQr=(patch)=>setOverrides(p=>({...p,__qr__:{...p.__qr__,...patch}}));
+  const updateOverrideIdText=(patch)=>setOverrides(p=>({...p,__idtext__:{...p.__idtext__,...patch}}));
+  const resetOverrides=()=>{setOverrides({});showToast('Adjustments reset to template defaults','i');};
+
+  useEffect(()=>{ setValues({}); setGenerated(null); setOverrides({}); setSelected(null); },[pickedId]);
 
   if(!certTypes.length){
     return(
@@ -822,7 +840,7 @@ function CreateTab({certTypes,onGenerated,fbOk,verifyBaseUrl,verifyParam,onBack}
     const baseCert={
       certId, certTypeId:certType.id, certTypeName:certType.name, listName:certType.listName,
       values:{...values}, createdAt:Date.now(), createdDate:new Date().toISOString().slice(0,10),
-      snapshot:{templateImage:certType.templateImage, labels:certType.labels, qr:certType.qr, idText:certType.idText, orientation:certType.orientation}
+      snapshot:{templateImage:mergedCertType.templateImage, labels:mergedCertType.labels, qr:mergedCertType.qr, idText:mergedCertType.idText, orientation:mergedCertType.orientation}
     };
 
     // Mount the hidden full-scale #print-target so we can capture it
@@ -950,16 +968,66 @@ function CreateTab({certTypes,onGenerated,fbOk,verifyBaseUrl,verifyParam,onBack}
       </div>
 
       <div style={{flex:'1 1 420px',minWidth:320}}>
-        <div className="cert-outer">
+        <div className="page-sub" style={{marginBottom:6}}>Click any text or the QR block to nudge it for <strong>this certificate only</strong> — the saved template stays untouched.</div>
+        <div className="cert-outer" onClick={()=>setSelected(null)}>
           <div ref={certRef}>
-            <CertificateView certType={certType} values={values} certId={generated?.certId||''} scale={0.66} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam}/>
+            <CertificateView certType={mergedCertType} values={values} certId={generated?.certId||''} scale={0.66} selectedLabelId={selected} onSelectLabel={setSelected} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} interactive={true}/>
           </div>
+        </div>
+        {Object.keys(overrides).length>0 && <button className="btn btn-ghost btn-sm" style={{marginTop:8}} onClick={resetOverrides}>↺ Reset Adjustments</button>}
+      </div>
+
+      <div className="side" style={{position:'static',boxShadow:'none',border:'1px solid var(--bdr)',borderRadius:10,flex:'0 0 280px'}}>
+        <div className="side-hdr">⚙ Adjust This Certificate</div>
+        <div className="side-body">
+          {!selected && <div style={{fontSize:11,color:'var(--tx3)',padding:'20px 6px',textAlign:'center'}}>Select a label, ID text, or QR block above to adjust it for this certificate only.</div>}
+
+          {selected && certType && (certType.labels||[]).find(l=>l.id===selected) && (()=>{
+            const baseLbl=(certType.labels||[]).find(l=>l.id===selected);
+            const curStyle={...baseLbl.style,...(overrides[selected]||{})};
+            return(
+              <div className="dz-sec">
+                <div className="dz-sec-hdr">✏️ {baseLbl.label}</div>
+                <div className="dz-sec-body">
+                  <XY x={curStyle.x||0} y={curStyle.y||0} onX={v=>updateOverrideLabel(selected,{x:v})} onY={v=>updateOverrideLabel(selected,{y:v})} onReset={()=>updateOverrideLabel(selected,{x:baseLbl.style.x||0,y:baseLbl.style.y||0})}/>
+                  <SliderRow label="Size" val={curStyle.fontSize||16} min={8} max={72} onChange={v=>updateOverrideLabel(selected,{fontSize:v})} unit="px"/>
+                  <div className="sld-row"><span className="sld-lbl">Color</span><input type="color" value={curStyle.color||'#1c2430'} onChange={e=>updateOverrideLabel(selected,{color:e.target.value})}/></div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {selected==='__idtext__' && certType && (()=>{
+            const cur={...(certType.idText||DEFAULT_IDTEXT),...(overrides.__idtext__||{})};
+            return(
+              <div className="dz-sec">
+                <div className="dz-sec-hdr">🪪 Certificate ID Text</div>
+                <div className="dz-sec-body">
+                  <XY x={cur.x||0} y={cur.y||0} onX={v=>updateOverrideIdText({x:v})} onY={v=>updateOverrideIdText({y:v})}/>
+                  <SliderRow label="Size" val={cur.fontSize||9} min={6} max={22} onChange={v=>updateOverrideIdText({fontSize:v})} unit="px"/>
+                </div>
+              </div>
+            );
+          })()}
+
+          {selected==='__qr__' && certType && (()=>{
+            const cur={...(certType.qr||DEFAULT_QR),...(overrides.__qr__||{})};
+            return(
+              <div className="dz-sec">
+                <div className="dz-sec-hdr">▦ QR Code</div>
+                <div className="dz-sec-body">
+                  <SliderRow label="Size" val={cur.size||70} min={30} max={180} onChange={v=>updateOverrideQr({size:v})} unit="px"/>
+                  <XY x={cur.x||0} y={cur.y||0} onX={v=>updateOverrideQr({x:v})} onY={v=>updateOverrideQr({y:v})} onReset={()=>updateOverrideQr({x:0,y:0})}/>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
 
       {generated && (
         <div id="print-target" ref={printRef}>
-          <CertificateView certType={certType} values={values} certId={generated.certId} scale={1} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam}/>
+          <CertificateView certType={mergedCertType} values={values} certId={generated.certId} scale={1} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam}/>
         </div>
       )}
     </div>
@@ -967,10 +1035,11 @@ function CreateTab({certTypes,onGenerated,fbOk,verifyBaseUrl,verifyParam,onBack}
 }
 
 /* ============================ HISTORY TAB ============================ */
-function HistoryTab({certificates,certTypes,fbOk,onRefresh,onView,onDelete}){
+function HistoryTab({certificates,certTypes,fbOk,onRefresh,onView,onEdit,onDelete}){
   const [search,setSearch]=useState('');
   const [flist,setFlist]=useState('');
   const [fdate,setFdate]=useState('');
+  const [collapsed,setCollapsed]=useState({});
   const filtered=useMemo(()=>{
     let r=[...certificates];
     const q=search.toLowerCase();
@@ -982,10 +1051,29 @@ function HistoryTab({certificates,certTypes,fbOk,onRefresh,onView,onDelete}){
   },[certificates,search,flist,fdate]);
   const lists=[...new Set(certificates.map(c=>c.listName).filter(Boolean))];
 
+  const grouped=useMemo(()=>{
+    const g={};
+    filtered.forEach(c=>{
+      const key=c.listName||'Uncategorized';
+      if(!g[key]) g[key]=[];
+      g[key].push(c);
+    });
+    return Object.entries(g).sort((a,b)=>b[1].length-a[1].length);
+  },[filtered]);
+
+  const toggleCat=(key)=>setCollapsed(p=>({...p,[key]:!p[key]}));
+
+  const fieldPairs=(c)=>{
+    const ct=c.snapshot||certTypes.find(t=>t.id===c.certTypeId);
+    const labels=ct?.labels||[];
+    if(!labels.length) return Object.entries(c.values||{}).slice(0,3);
+    return labels.slice(0,3).map(l=>[l.label, l.type==='date'?fmtDate(c.values?.[l.key]):(c.values?.[l.key]||'—')]);
+  };
+
   return(
     <div>
       <div className="page-title">Certificate History</div>
-      <div className="page-sub">All generated certificates, saved by date. Search, view, re-print, or share any past certificate.</div>
+      <div className="page-sub">Certificates grouped by type. Search, view, edit, re-print, or share any past certificate.</div>
       <div className="filter-bar">
         <input placeholder="🔍 Search name, ID…" value={search} onChange={e=>setSearch(e.target.value)}/>
         <select value={flist} onChange={e=>setFlist(e.target.value)}><option value="">All Categories</option>{lists.map(l=><option key={l} value={l}>{l}</option>)}</select>
@@ -999,23 +1087,41 @@ function HistoryTab({certificates,certTypes,fbOk,onRefresh,onView,onDelete}){
           <div style={{fontFamily:'Cinzel,serif',fontSize:16,fontWeight:700,color:'var(--navy)'}}>No certificates found</div>
         </div>
       ) : (
-        <div className="hist-grid">
-          {filtered.map(c=>{
-            const ct=certTypes.find(t=>t.id===c.certTypeId);
-            const primaryVal=Object.values(c.values||{})[0]||'—';
-            return(
-              <div className="hist-card" key={c.certId}>
-                <div className="hist-name">{primaryVal}</div>
-                <div className="hist-meta">{c.listName} · {ct?.name||c.certTypeName||'(type removed)'}<br/>{new Date(c.createdAt).toLocaleString()}</div>
-                <div className="hist-id">{c.certId}</div>
-                <div style={{display:'flex',gap:5,marginTop:9,flexWrap:'wrap'}}>
-                  <button className="btn btn-navy btn-xs" onClick={()=>onView(c)}>👁 View / Print</button>
-                  <button className="btn btn-red btn-xs" onClick={()=>onDelete(c.certId)}>🗑</button>
-                </div>
+        grouped.map(([catName,certs])=>{
+          const isCollapsed=!!collapsed[catName];
+          return(
+            <div className="cat-section" key={catName}>
+              <div className="cat-hdr" style={{cursor:'pointer'}} onClick={()=>toggleCat(catName)}>
+                <span style={{fontSize:14,color:'var(--tx2)'}}>{isCollapsed?'▸':'▾'}</span>
+                <h3 style={{flex:1}}>🏆 {catName}</h3>
+                <span className="cat-count">{certs.length} certificate{certs.length!==1?'s':''}</span>
               </div>
-            );
-          })}
-        </div>
+              {!isCollapsed && (
+                <div className="hist-grid">
+                  {certs.map(c=>{
+                    const ct=c.snapshot||certTypes.find(t=>t.id===c.certTypeId);
+                    const pairs=fieldPairs(c);
+                    return(
+                      <div className="hist-card" key={c.certId}>
+                        <div className="hist-name">{ct?.name||c.certTypeName||'Certificate'}</div>
+                        <div className="hist-meta">
+                          {pairs.map(([lbl,val])=>(<div key={lbl}><strong style={{color:'var(--navy)'}}>{lbl}:</strong> {val||'—'}</div>))}
+                          <div style={{marginTop:4,color:'var(--tx3)'}}>{new Date(c.createdAt).toLocaleString()}</div>
+                        </div>
+                        <div className="hist-id">{c.certId}</div>
+                        <div style={{display:'flex',gap:5,marginTop:9,flexWrap:'wrap'}}>
+                          <button className="btn btn-navy btn-xs" onClick={()=>onView(c)}>👁 View / Print</button>
+                          <button className="btn btn-grn btn-xs" onClick={()=>onEdit(c)}>✏️ Edit</button>
+                          <button className="btn btn-red btn-xs" onClick={()=>onDelete(c.certId)}>🗑</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })
       )}
     </div>
   );
@@ -1023,7 +1129,7 @@ function HistoryTab({certificates,certTypes,fbOk,onRefresh,onView,onDelete}){
 
 /* ============================ VIEW / REPRINT MODAL ============================ */
 function ViewCertModal({cert,certTypes,onClose,verifyBaseUrl,verifyParam}){
- const ct=certTypes.find(t=>t.id===cert.certTypeId)||cert.snapshot;
+ const ct=cert.snapshot||certTypes.find(t=>t.id===cert.certTypeId);
   const ref=useRef();
   const printRef=useRef();
   const doPrint=()=>window.print();
@@ -1086,6 +1192,93 @@ function ViewCertModal({cert,certTypes,onClose,verifyBaseUrl,verifyParam}){
   );
 }
 
+/* ============================ EDIT CERTIFICATE MODAL ============================ */
+function EditCertModal({cert,certTypes,onClose,onSaved,fbOk,activeSchool,activeSession,verifyBaseUrl,verifyParam}){
+  const ct=cert.snapshot||certTypes.find(t=>t.id===cert.certTypeId);
+  const [values,setValues]=useState({...cert.values});
+  const [saving,setSaving]=useState(false);
+  const printRef=useRef();
+  if(!ct) return (<div className="modal-bg" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}><h3>⚠ Template Missing</h3><p style={{fontSize:11,color:'var(--tx2)'}}>Cannot edit — original template data is missing.</p><button className="btn btn-ghost" onClick={onClose}>Close</button></div></div>);
+
+  const setVal=(key,v)=>setValues(p=>({...p,[key]:v}));
+
+  const save=async()=>{
+    const missing=(ct.labels||[]).filter(l=>!values[l.key]?.trim());
+    if(missing.length){ showToast(`Fill: ${missing.map(m=>m.label).join(', ')}`,'w'); return; }
+    setSaving(true);
+    showToast('Re-rendering certificate…','i');
+
+    let node=null;
+    for(let i=0;i<20;i++){
+      node = printRef.current?.querySelector('.cert-frame');
+      if(node) break;
+      await new Promise(r=>setTimeout(r,50));
+    }
+
+    let newImageUrl=cert.certImageUrl||null;
+    const cloudReady=window.CLOUDINARY_CONFIG.cloudName && window.CLOUDINARY_CONFIG.cloudName!=='YOUR_CLOUD_NAME';
+    if(node){
+      try{
+        await waitForImagesLoaded(node);
+        const canvas=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:'#ffffff'});
+        const dataUrl=canvas.toDataURL('image/png');
+        if(cloudReady){
+          showToast('Uploading updated certificate image…','i');
+          newImageUrl=await window.uploadToCloudinary(dataUrl, window.CLOUDINARY_CONFIG.folder+'/certificates');
+          showToast('New certificate image uploaded ✓','s');
+        }
+      }catch(e){
+        showToast('Could not re-render image: '+e.message,'w');
+      }
+    }
+
+    const updatedCert={...cert, values:{...values}, certImageUrl:newImageUrl, updatedAt:Date.now()};
+
+    if(fbOk&&window.fbSaveCertificate){
+      try{
+        await window.fbSaveCertificate(updatedCert,activeSchool,activeSession);
+        showToast('Certificate updated ✓','s');
+      }catch(e){
+        showToast('Update failed to save: '+e.message,'e');
+      }
+    }else{
+      showToast('Firebase not connected — change kept locally only','w');
+    }
+
+    setSaving(false);
+    onSaved(updatedCert);
+  };
+
+  return(
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" style={{maxWidth:760}} onClick={e=>e.stopPropagation()}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+          <h3 style={{marginBottom:0}}>✏️ Edit {cert.certId}</h3>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>✕ Close</button>
+        </div>
+        <div className="form-grid">
+          {(ct.labels||[]).map(l=>(
+            <div className="form-field" key={l.id}>
+              <label>{l.type==='date'?'📅 ':''}{l.label}</label>
+              <input type={l.type==='date'?'date':'text'} value={values[l.key]||''} onChange={e=>setVal(l.key,e.target.value)}/>
+            </div>
+          ))}
+        </div>
+        <div className="cert-outer" style={{marginTop:10}}>
+          <CertificateView certType={ct} values={values} certId={cert.certId} scale={0.55} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam}/>
+        </div>
+        <div style={{display:'flex',gap:8,marginTop:12}}>
+          <button className="btn btn-gold" onClick={save} disabled={saving}>{saving?'Saving…':'💾 Save Changes'}</button>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        </div>
+        <div id="print-target" ref={printRef}>
+          <CertificateView certType={ct} values={values} certId={cert.certId} scale={1} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam}/>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ============================ VERIFY PAGE (QR scan target — in-app) ============================ */
 function VerifyOverlay({certId,certTypes,schoolName,onClose,fbOk,activeSchool,activeSession}){
   const [cert,setCert]=useState(undefined); // undefined=loading, null=not found
@@ -1100,7 +1293,7 @@ function VerifyOverlay({certId,certTypes,schoolName,onClose,fbOk,activeSchool,ac
       }catch(e){ setCert(null); }
     })();
   },[certId,fbOk]);
-  const ct = cert ? (certTypes.find(t=>t.id===cert.certTypeId)||cert.snapshot) : null;
+  const ct = cert ? (cert.snapshot||certTypes.find(t=>t.id===cert.certTypeId)) : null;
   const now=new Date();
   const primaryName = cert ? (Object.entries(cert.values||{}).find(([k])=>k.toUpperCase().includes('NAME'))?.[1] || Object.values(cert.values||{})[0] || '') : '';
   if(cert===undefined) return(<div className="verify-overlay"><button className="verify-close" onClick={onClose}>✕</button><div className="verify-card" style={{padding:40,textAlign:'center'}}><div style={{fontSize:30}}>⏳</div><div style={{fontWeight:700,marginTop:8}}>Verifying…</div></div></div>);
@@ -1288,6 +1481,7 @@ function App(){
   const [showCreateType,setShowCreateType]=useState(false);
   const [fbStatus,setFbStatus]=useState('loading');
   const [viewingCert,setViewingCert]=useState(null);
+  const [editingCert,setEditingCert]=useState(null);
   const [verifyCertId,setVerifyCertId]=useState(null);
 
   const fbOk=fbStatus==='ok';
@@ -1313,7 +1507,10 @@ const handleSetupDone=useCallback((schoolId,session,schoolObj)=>{
   const saveSchools=useCallback(async(updated)=>{
     setSchools(updated);
     if(fbOk&&window.fbSaveOneSchool){
-      for(const s of updated){ try{ await window.fbSaveOneSchool(s); }catch(e){} }
+      for(const s of updated){
+        try{ await window.fbSaveOneSchool(s); }
+        catch(e){ showToast(`Failed to save school "${s.name}": `+e.message,'e'); }
+      }
     }
   },[fbOk]);
 
@@ -1376,7 +1573,7 @@ useEffect(()=>{
   };
   const updateType=useCallback((updated)=>{
     setCertTypes(prev=>prev.map(c=>c.id===updated.id?updated:c));
-    if(fbOk&&window.fbSaveCertType) window.fbSaveCertType(updated,activeSchool,activeSession).catch(()=>{});
+    if(fbOk&&window.fbSaveCertType) window.fbSaveCertType(updated,activeSchool,activeSession).catch((e)=>showToast('Auto-save failed: '+e.message,'w'));
   },[fbOk,activeSchool,activeSession]);
   const saveTypeToCloud=useCallback(async(ct)=>{
     if(!fbOk||!window.fbSaveCertType){ showToast('Firebase not connected — saved locally only','w'); return; }
@@ -1387,8 +1584,16 @@ useEffect(()=>{
     if(!confirm('Delete this certificate type? Existing generated certificates keep their data (snapshot) but the template link is removed.')) return;
     setCertTypes(p=>p.filter(c=>c.id!==id));
     if(designId===id) setDesignId(null);
-    if(fbOk&&window.fbDeleteCertType) try{ await window.fbDeleteCertType(id,activeSchool,activeSession); }catch(e){}
-    showToast('Certificate type deleted','s');
+    if(fbOk&&window.fbDeleteCertType){
+      try{
+        await window.fbDeleteCertType(id,activeSchool,activeSession);
+        showToast('Certificate type deleted ✓','s');
+      }catch(e){
+        showToast('Deleted locally — Firebase delete failed: '+e.message,'w');
+      }
+    }else{
+      showToast('Deleted locally — Firebase not connected','w');
+    }
   };
   const onGenerated=async(cert)=>{
     setCertificates(p=>[cert,...p]);
@@ -1407,8 +1612,16 @@ useEffect(()=>{
   const deleteCert=async(certId)=>{
     if(!confirm('Delete this certificate record?'))return;
     setCertificates(p=>p.filter(c=>c.certId!==certId));
-    if(fbOk&&window.fbDeleteCertificate) try{ await window.fbDeleteCertificate(certId,activeSchool,activeSession); }catch(e){}
-    showToast('Deleted','s');
+    if(fbOk&&window.fbDeleteCertificate){
+      try{
+        await window.fbDeleteCertificate(certId,activeSchool,activeSession);
+        showToast('Certificate deleted ✓','s');
+      }catch(e){
+        showToast('Deleted locally — Firebase delete failed: '+e.message,'w');
+      }
+    }else{
+      showToast('Deleted locally — Firebase not connected','w');
+    }
   };
 
   const activeDesignType=certTypes.find(c=>c.id===designId);
@@ -1423,21 +1636,6 @@ useEffect(()=>{
 
   return(
     <div className="app">
-      <div className="topbar no-print">
-        {tab!=='types' && <button className="back-btn" title="Back to Types" onClick={()=>setTab('types')}>←</button>}
-        <div className="brand"><div className="brand-badge">🏆</div><div><h1>Certificate Studio</h1><p>Design · Generate · Verify</p></div></div>
-        <div className="tabs">
-          {[['types','🎴','Types'],['designer','🎨','Designer'],['create','✍️','Create'],['history','📜','History']].map(([k,ic,lbl])=>(
-            <button key={k} className={`tab-btn${tab===k?' active':''}`} onClick={()=>setTab(k)}>{ic} {lbl}</button>
-          ))}
-        </div>
-        <div className="top-right">
-          <div className="fb-pill"><div className={`fb-dot ${fbDot}`}/>Firebase: {fbLabel}</div>
-          <div className="fb-pill"><div className={`fb-dot ${cdnConfigured?'ok':'err'}`}/>CDN: {cdnConfigured?'Connected':'Not Configured'}</div>
-          <div className="fb-pill"><div className={`fb-dot ${workerConfigured?'ok':'err'}`}/>Worker: {workerConfigured?'Connected':'Not Configured'}</div>
-        </div>
-      </div>
-
       <div className="context-bar no-print">
         <span style={{fontSize:9,color:'rgba(255,255,255,.4)',fontWeight:700}}>🏫</span>
         <span style={{fontSize:10.5,fontWeight:700}}>{school?.name}</span>
@@ -1450,7 +1648,10 @@ useEffect(()=>{
         </>) : (
           <span style={{fontSize:9,color:'rgba(255,255,255,.4)',marginLeft:6}}>📅 {activeSession}</span>
         )}
-        <div style={{marginLeft:'auto',fontSize:9,color:'rgba(255,255,255,.5)'}}>{certTypes.length} types · {certificates.length} certificates</div>
+        <div style={{fontSize:9,color:'rgba(255,255,255,.5)'}}>{certTypes.length} types · {certificates.length} certificates</div>
+        <div className="fb-pill" style={{marginLeft:'auto'}}><div className={`fb-dot ${fbDot}`}/>🔥 Firebase: {fbLabel}</div>
+        <div className="fb-pill"><div className={`fb-dot ${cdnConfigured?'ok':'err'}`}/>☁️ CDN: {cdnConfigured?'Connected':'Not Configured'}</div>
+        <div className="fb-pill"><div className={`fb-dot ${workerConfigured?'ok':'err'}`}/>🔗 Worker: {workerConfigured?'Connected':'Not Configured'}</div>
       </div>
 
       <div className="app-body">
@@ -1458,12 +1659,13 @@ useEffect(()=>{
           {tab==='types' && <TypesTab certTypes={certTypes} onOpenCreate={()=>setShowCreateType(true)} onSelectDesign={(id)=>{setDesignId(id);setTab('designer');}} onDelete={deleteType}/>}
           {tab==='designer' && <DesignerTab certType={activeDesignType} onUpdate={updateType} onSaveCloud={saveTypeToCloud} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} onBack={()=>setTab('types')}/>}
           {tab==='create' && <CreateTab certTypes={certTypes} onGenerated={onGenerated} fbOk={fbOk} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} onBack={()=>setTab('types')}/>}
-          {tab==='history' && <HistoryTab certificates={certificates} certTypes={certTypes} fbOk={fbOk} onRefresh={reloadCerts} onView={setViewingCert} onDelete={deleteCert}/>}
+          {tab==='history' && <HistoryTab certificates={certificates} certTypes={certTypes} fbOk={fbOk} onRefresh={reloadCerts} onView={setViewingCert} onEdit={setEditingCert} onDelete={deleteCert}/>}
         </div>
       </div>
 
       {showCreateType && <CreateTypeModal onClose={()=>setShowCreateType(false)} onCreated={createType} fbOk={fbOk} existingCategories={existingCategories}/>}
       {viewingCert && <ViewCertModal cert={viewingCert} certTypes={certTypes} onClose={()=>setViewingCert(null)} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam}/>}
+      {editingCert && <EditCertModal cert={editingCert} certTypes={certTypes} onClose={()=>setEditingCert(null)} onSaved={(updated)=>{ setCertificates(p=>p.map(c=>c.certId===updated.certId?updated:c)); setEditingCert(null); }} fbOk={fbOk} activeSchool={activeSchool} activeSession={activeSession} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam}/>}
       {verifyCertId && <VerifyOverlay certId={verifyCertId} certTypes={certTypes} schoolName={school?.name} onClose={()=>{setVerifyCertId(null);window.history.replaceState({},'',window.location.pathname);}} fbOk={fbOk} activeSchool={activeSchool} activeSession={activeSession}/>}
 
       <div style={{background:'var(--navy)',color:'rgba(255,255,255,.55)',textAlign:'center',padding:'6px',fontSize:9.5}} className="no-print">
@@ -1474,6 +1676,8 @@ useEffect(()=>{
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+
+try{ window.parent.postMessage({type:'studioReady'}, '*'); }catch(e){}
 </script>
 
 <script>
