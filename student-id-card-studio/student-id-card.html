@@ -1260,6 +1260,7 @@ useEffect(()=>{
 
   // ── FIX: pendingCfg batches sidebar control changes so App doesn't re-render on every click ──
   const [pendingCfg,setPendingCfg]=useState({});
+  const [serviceBlocked,setServiceBlocked]=useState(null);
 
   const set=useCallback((k,v)=>{
     if(!activeSchool)return;
@@ -1300,7 +1301,7 @@ useEffect(()=>{
 
   useEffect(()=>{
     const onReady=async()=>{
-      try{const fbSchools=await window.fbLoadSchools(window._adminEmail||'');if(fbSchools&&fbSchools.length){setSchools(fbSchools.map(s=>({id:s.id,name:s.name,sessions:s.sessions||[],line2:s.line2||'',line3:s.line3||'',line4:s.line4||''})));}setFbStatus('ok');}
+      try{const fbSchools=await window.fbLoadSchools(window._adminEmail||'');if(fbSchools&&fbSchools.length){setSchools(fbSchools.map(s=>({id:s.id,name:s.name,sessions:s.sessions||[],line2:s.line2||'',line3:s.line3||'',line4:s.line4||'',services:s.services||{}})));}setFbStatus('ok');}
       catch(e){setFbStatus('error');setFbError(e.message||'Unknown');}
       setSchoolsLoaded(true);
     };
@@ -1324,6 +1325,11 @@ useEffect(()=>{
   },[fbOk]);
 
   const handleSetupDone=useCallback(async(schoolId,session,schoolObj)=>{
+    const schCheck=schoolObj||schools.find(s=>s.id===schoolId);
+    if(schCheck&&schCheck.services&&schCheck.services.student===false){
+      setServiceBlocked({schoolName:schCheck.name||'This school'});
+      return;
+    }
     setActiveSchool(schoolId);setActiveSession(session);setShowSetup(false);
     setStudents([]);setCardOverrides({});setAdjStudent(null);
     const sch=schoolObj||schools.find(s=>s.id===schoolId);
@@ -1357,7 +1363,8 @@ useEffect(()=>{
     if(schools&&schools.length){
       setSchools(schools.map(s=>({
         id:s.id,name:s.name,sessions:s.sessions||[],
-        line2:s.line2||'',line3:s.line3||'',line4:s.line4||''
+        line2:s.line2||'',line3:s.line3||'',line4:s.line4||'',
+        services:s.services||{}
       })));
       // Auto-open if only 1 school exists
       if(singleSchoolMode&&schools.length===1){
@@ -1812,7 +1819,7 @@ useEffect(()=>{
 
       <div className="context-bar no-print">
         <span style={{fontSize:9,color:'rgba(255,255,255,.4)',fontWeight:700}}>🏫</span>
-        <select className="ctx-sel" value={activeSchool||''} onChange={e=>{const id=e.target.value;const sch=schools.find(s=>s.id===id);if(sch){setActiveSchool(id);const ses=sch.sessions[sch.sessions.length-1]||'';setActiveSession(ses);setStudents([]);setCardOverrides([]);loadSchoolData(id,ses);}}}>
+        <select className="ctx-sel" value={activeSchool||''} onChange={e=>{const id=e.target.value;const sch=schools.find(s=>s.id===id);if(sch){if(sch.services&&sch.services.student===false){setServiceBlocked({schoolName:sch.name||'This school'});return;}setActiveSchool(id);const ses=sch.sessions[sch.sessions.length-1]||'';setActiveSession(ses);setStudents([]);setCardOverrides([]);loadSchoolData(id,ses);}}}>
           {schools.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
         <span style={{fontSize:9,color:'rgba(255,255,255,.4)',fontWeight:700}}>📅</span>
@@ -2092,6 +2099,20 @@ useEffect(()=>{
       {showClearLocal&&(<div className="modal-bg" onClick={()=>setShowClearLocal(false)}><div className="modal" onClick={e=>e.stopPropagation()}><h3>🗑 Clear Local Data</h3><p style={{fontSize:11,color:'var(--tx2)',marginBottom:14}}>Removes all students from this session. Firebase not affected.</p><div style={{display:'flex',gap:7}}><button className="btn btn-red" style={{flex:1}} onClick={()=>{setStudents([]);setCardOverrides({});setAdjStudent(null);setShowClearLocal(false);showToast('Local data cleared','s');setTab('upload');}}>Yes, Clear</button><button className="btn btn-ghost" style={{flex:1}} onClick={()=>setShowClearLocal(false)}>Cancel</button></div></div></div>)}
 
       {showClearCloud&&(<div className="modal-bg" onClick={()=>setShowClearCloud(false)}><div className="modal" onClick={e=>e.stopPropagation()}><h3>☁️ Clear Firebase Data</h3><p style={{fontSize:11,color:'var(--tx2)',marginBottom:5}}>Permanently deletes <strong style={{color:'var(--red)'}}>{fbCount} students</strong> from <strong>{currentSchool?.name}</strong> · <strong>{activeSession}</strong>.</p><p style={{fontSize:11,color:'var(--red)',fontWeight:700,marginBottom:14}}>⚠️ Cannot be undone!</p><div style={{display:'flex',gap:7}}><button className="btn btn-red" style={{flex:1}} onClick={handleClearFB}>Yes, Delete All</button><button className="btn btn-ghost" style={{flex:1}} onClick={()=>setShowClearCloud(false)}>Cancel</button></div></div></div>)}
+
+      {serviceBlocked&&(
+        <div className="modal-bg" style={{zIndex:5000}} onClick={()=>setServiceBlocked(null)}>
+          <div className="modal" style={{maxWidth:440,textAlign:'center',position:'relative',padding:'34px 26px'}} onClick={e=>e.stopPropagation()}>
+            <button onClick={()=>setServiceBlocked(null)} style={{position:'absolute',top:12,right:12,background:'rgba(239,68,68,.12)',border:'1px solid rgba(239,68,68,.3)',color:'#dc2626',width:30,height:30,borderRadius:'50%',fontSize:15,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>✕</button>
+            <div style={{fontSize:54,marginBottom:12}}>🚫</div>
+            <h3 style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:21,fontWeight:900,color:'var(--navy)',marginBottom:10}}>Service Blocked by Admin</h3>
+            <p style={{fontSize:13,color:'var(--tx2)',lineHeight:1.7}}>
+              The <strong>Student ID Card Studio</strong> for <strong>{serviceBlocked.schoolName}</strong> has been suspended by the Super Admin.
+            </p>
+            <p style={{fontSize:11.5,color:'var(--tx2)',marginTop:10}}>Please contact your administrator to restore access.</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

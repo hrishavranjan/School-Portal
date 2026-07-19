@@ -1483,6 +1483,7 @@ function App(){
   const [viewingCert,setViewingCert]=useState(null);
   const [editingCert,setEditingCert]=useState(null);
   const [verifyCertId,setVerifyCertId]=useState(null);
+  const [serviceBlocked,setServiceBlocked]=useState(null);
 
   const fbOk=fbStatus==='ok';
   const cdnConfigured = window.CLOUDINARY_CONFIG.cloudName && window.CLOUDINARY_CONFIG.cloudName!=='YOUR_CLOUD_NAME';
@@ -1499,11 +1500,16 @@ function App(){
   },[]);
 
 const handleSetupDone=useCallback((schoolId,session,schoolObj)=>{
+    if(schoolObj&&schoolObj.services&&schoolObj.services.certificate===false){
+      setServiceBlocked({schoolName:schoolObj.name||'This school'});
+      return;
+    }
     setSchool(schoolObj);
     setActiveSession(session);
     setSchoolStatus('ready');
     setShowSetup(false);
   },[]);
+
   const saveSchools=useCallback(async(updated)=>{
     setSchools(updated);
     if(fbOk&&window.fbSaveOneSchool){
@@ -1667,6 +1673,20 @@ useEffect(()=>{
       {viewingCert && <ViewCertModal cert={viewingCert} certTypes={certTypes} onClose={()=>setViewingCert(null)} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam}/>}
       {editingCert && <EditCertModal cert={editingCert} certTypes={certTypes} onClose={()=>setEditingCert(null)} onSaved={(updated)=>{ setCertificates(p=>p.map(c=>c.certId===updated.certId?updated:c)); setEditingCert(null); }} fbOk={fbOk} activeSchool={activeSchool} activeSession={activeSession} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam}/>}
       {verifyCertId && <VerifyOverlay certId={verifyCertId} certTypes={certTypes} schoolName={school?.name} onClose={()=>{setVerifyCertId(null);window.history.replaceState({},'',window.location.pathname);}} fbOk={fbOk} activeSchool={activeSchool} activeSession={activeSession}/>}
+
+      {serviceBlocked&&(
+        <div className="modal-bg" style={{zIndex:5000}} onClick={()=>setServiceBlocked(null)}>
+          <div className="modal" style={{maxWidth:440,textAlign:'center',position:'relative',padding:'34px 26px'}} onClick={e=>e.stopPropagation()}>
+            <button onClick={()=>setServiceBlocked(null)} style={{position:'absolute',top:12,right:12,background:'rgba(194,59,59,.12)',border:'1px solid rgba(194,59,59,.3)',color:'#c23b3b',width:30,height:30,borderRadius:'50%',fontSize:15,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>✕</button>
+            <div style={{fontSize:54,marginBottom:12}}>🚫</div>
+            <h3 style={{fontFamily:"'Cinzel',serif",fontSize:21,fontWeight:900,color:'var(--navy)',marginBottom:10}}>Service Blocked by Admin</h3>
+            <p style={{fontSize:13,color:'var(--tx2)',lineHeight:1.7}}>
+              The <strong>Certificate Studio</strong> for <strong>{serviceBlocked.schoolName}</strong> has been suspended by the Super Admin.
+            </p>
+            <p style={{fontSize:11.5,color:'var(--tx2)',marginTop:10}}>Please contact your administrator to restore access.</p>
+          </div>
+        </div>
+      )}
 
       <div style={{background:'var(--navy)',color:'rgba(255,255,255,.55)',textAlign:'center',padding:'6px',fontSize:9.5}} className="no-print">
         Certificate Generator Studio · v2.1 · {school?.name||''} {activeSession?`· ${activeSession}`:''}
