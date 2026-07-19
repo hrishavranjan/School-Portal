@@ -1,0 +1,5 @@
+{
+  "name": "school-admin-email-updater",
+  "main": "src/index.js",
+  "compatibility_date": "2025-01-01"
+}

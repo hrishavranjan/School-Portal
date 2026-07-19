@@ -1,0 +1,1512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Certificate Generator Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;900&family=Cinzel:wght@400;600;700;900&family=Cormorant+Garamond:wght@400;600;700&family=Great+Vibes&family=Dancing+Script:wght@400;700&family=Raleway:wght@400;600;700;800&family=Barlow:wght@400;600;700;800;900&family=Barlow+Condensed:wght@400;600;700;800;900&family=Poppins:wght@400;600;700;900&family=Marcellus&family=EB+Garamond:wght@400;600;700&family=Tangerine:wght@700&family=Sacramento&family=Pacifico&family=Caveat:wght@400;700&family=Kalam:wght@400;700&family=Satisfy&family=Indie+Flower&family=Permanent+Marker&family=Shadows+Into+Light&family=Allura&family=Alex+Brush&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script>
+/* ============ CLOUDINARY (optional image hosting) ============ */
+window.CLOUDINARY_CONFIG = { cloudName:'dbqqvmkss', uploadPreset:'Student Cerificate', folder:'school-id-cards/teachers' };
+window.CERT_WORKER_CONFIG = { url: 'https://c-id.coex.workers.dev' };
+
+/* ============ APP CONFIG ============
+   schoolId  -> the Firestore school doc id this deployment belongs to.
+                Leave blank to resolve it from the URL, e.g. ?school=SCHOOL_ID
+   workerUrl -> your deployed Cloudflare Worker used for certificate verification
+                (the actual worker.js is a separate backend file, deployed on
+                Cloudflare - this is just the URL the frontend calls). Leave
+                blank if you are not using a verification worker; the app will
+                fall back to verifying certificates on this same page.
+   ==================================== */
+window.CERT_APP_CONFIG = {
+  schoolId: '',
+  workerUrl: ''
+};
+</script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script>
+(function(){
+  const firebaseConfig = {
+    apiKey:"AIzaSyCKjBisAbjBrqLgMiIGVrXipypvpL1BLFw",
+    authDomain:"id-card-studio-coex.firebaseapp.com",
+    projectId:"id-card-studio-coex",
+    storageBucket:"id-card-studio-coex.firebasestorage.app",
+    messagingSenderId:"560739605567",
+    appId:"1:560739605567:web:5ddc295d98c1627a732c8a"
+  };
+  window.uploadToCloudinary = async function(dataUrl, folder){
+    const cfg = window.CLOUDINARY_CONFIG;
+    if(!cfg.cloudName || cfg.cloudName==='YOUR_CLOUD_NAME') throw new Error('Cloudinary not configured.');
+    const res = await fetch(dataUrl); const blob = await res.blob();
+    const fd = new FormData(); fd.append('file', blob); fd.append('upload_preset', cfg.uploadPreset);
+    if(folder||cfg.folder) fd.append('folder', folder||cfg.folder);
+    const up = await fetch(`https://api.cloudinary.com/v1_1/${cfg.cloudName}/image/upload`,{method:'POST',body:fd});
+    if(!up.ok){const e=await up.json().catch(()=>({}));throw new Error('Cloudinary upload failed: '+(e.error?.message||up.status));}
+    const d = await up.json(); return d.secure_url;
+  };
+  const IS_CONFIGURED = firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith('YOUR_');
+  window._fbConfigured = IS_CONFIGURED;
+  if(!IS_CONFIGURED){ window._fbReady=false; document.dispatchEvent(new Event('fbNotConfigured')); }
+  else{
+    (async function init(){
+      try{
+        const app = firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const col = (p)=>db.collection(p);
+        const doc = (p,id)=>db.collection(p).doc(id);
+
+        const colPath = (schoolId,session,sub)=>`schools/${encodeURIComponent(schoolId)}/sessions/${encodeURIComponent(session)}/${sub}`;
+
+        // ---- Schools (read-only - schools are provisioned by the admin/backoffice, not created here) ----
+        window.fbLoadSchoolById = async (schoolId)=>{
+          if(!schoolId) return null;
+          const id = schoolId.replace(/[^\w]/g,'_');
+          const snap = await doc('schools',id).get();
+          return snap.exists ? snap.data() : null;
+        };
+        window.fbLoadSchools = async (adminEmail)=>{
+          if(adminEmail){
+            const snap = await col('schools').where('adminEmail','==',adminEmail).get();
+            if(!snap.empty) return snap.docs.map(d=>d.data());
+          }
+          return [];
+        };
+        window.fbSaveOneSchool = async (school)=>{
+          const id = school.id.replace(/[^\w]/g,'_');
+          await doc('schools',id).set({
+            id:school.id, name:school.name, sessions:school.sessions||[],
+            adminEmail: school.adminEmail||'',
+            line2:school.line2||'', line3:school.line3||'', line4:school.line4||'',
+            updatedAt:Date.now()
+          },{merge:true});
+        };
+
+        // ---- Certificate Types (scoped to school/session) ----
+        window.fbSaveCertType = async (ct, schoolId, session)=>{
+          const id = ct.id.replace(/[^\w]/g,'_');
+          const cp = colPath(schoolId,session,'certTypes');
+          await db.collection(cp).doc(id).set({...ct, updatedAt: Date.now()}, {merge:true});
+        };
+        window.fbLoadCertTypes = async (schoolId, session)=>{
+          const cp = colPath(schoolId,session,'certTypes');
+          const snap = await db.collection(cp).get();
+          return snap.docs.map(d=>d.data());
+        };
+        window.fbDeleteCertType = async (id, schoolId, session)=>{
+          const cp = colPath(schoolId,session,'certTypes');
+          await db.collection(cp).doc(id.replace(/[^\w]/g,'_')).delete();
+        };
+
+        // ---- Certificates (generated instances, scoped to school/session) ----
+        window.fbSaveCertificate = async (cert, schoolId, session)=>{
+          const id = cert.certId.replace(/[^\w]/g,'_');
+          const cp = colPath(schoolId,session,'certificates');
+          await db.collection(cp).doc(id).set({...cert, SCHOOL_ID:schoolId, SESSION:session, updatedAt: Date.now()}, {merge:true});
+        };
+        window.fbLoadCertificates = async (schoolId, session)=>{
+          const cp = colPath(schoolId,session,'certificates');
+          const snap = await db.collection(cp).orderBy('createdAt','desc').get().catch(async()=>await db.collection(cp).get());
+          return snap.docs.map(d=>d.data());
+        };
+        window.fbDeleteCertificate = async (certId, schoolId, session)=>{
+          const cp = colPath(schoolId,session,'certificates');
+          await db.collection(cp).doc(certId.replace(/[^\w]/g,'_')).delete();
+        };
+        window.fbGetCertificateById = async (certId, schoolId, session)=>{
+          const cp = colPath(schoolId,session,'certificates');
+          const snap = await db.collection(cp).doc(certId.replace(/[^\w]/g,'_')).get();
+          return snap.exists ? snap.data() : null;
+        };
+        // Global lookup across all schools/sessions (used when verify link has no active school context)
+        window.fbGetCertificateByIdGlobal = async (certId)=>{
+          const snap = await db.collectionGroup('certificates').where('certId','==',certId).limit(1).get();
+          if(snap.empty) return null;
+          return snap.docs[0].data();
+        };
+        window._fbReady = true; document.dispatchEvent(new Event('fbReady'));
+      }catch(e){ console.error('Firebase init error:', e); window._fbReady=false; window._fbInitError=e.message; document.dispatchEvent(new CustomEvent('fbError',{detail:e.message})); }
+    })();
+  }
+})();
+</script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --ink:#1c2430; --gold:#b8912f; --gold2:#e6c975; --navy:#0e1b33; --deep:#152238;
+  --bg:#f4efe4; --bg2:#ece3d0; --panel:#fffdf8;
+  --tx:#241f14; --tx2:#5a5344; --tx3:#948a72;
+  --bdr:#e2d6b8; --bdr2:#d3c496;
+  --grn:#127a52; --red:#c23b3b; --org:#c07d1d; --purple:#6b3fa0;
+}
+body{font-family:'Raleway',sans-serif;background:linear-gradient(135deg,var(--bg),var(--bg2));color:var(--tx);min-height:100vh;overflow-x:hidden}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--gold);border-radius:3px}
+.app{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+
+/* ===== Top bar ===== */
+.topbar{background:linear-gradient(120deg,var(--navy),var(--deep));color:#fff;display:flex;align-items:center;padding:0 18px;height:58px;flex-shrink:0;border-bottom:3px solid var(--gold);box-shadow:0 2px 14px rgba(0,0,0,.2);gap:10px}
+.brand{display:flex;align-items:center;gap:11px}
+.brand-badge{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--gold),#8f6d1e);display:flex;align-items:center;justify-content:center;font-size:19px;box-shadow:0 2px 8px rgba(184,145,47,.5)}
+.brand h1{font-family:'Cinzel',serif;font-size:18px;font-weight:700;letter-spacing:1px;line-height:1.1}
+.brand p{font-size:8.5px;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;margin-top:2px}
+.back-btn{width:34px;height:34px;border-radius:8px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s}
+.back-btn:hover{background:rgba(255,255,255,.22)}
+.tabs{display:flex;gap:3px;margin-left:10px;flex:1}
+.tab-btn{padding:8px 16px;border-radius:6px;font-size:11.5px;font-weight:700;cursor:pointer;border:none;background:rgba(255,255,255,.06);color:rgba(255,255,255,.6);font-family:'Raleway',sans-serif;letter-spacing:.4px;text-transform:uppercase;transition:all .2s}
+.tab-btn:hover{background:rgba(255,255,255,.15);color:#fff}
+.tab-btn.active{background:linear-gradient(135deg,var(--gold),#96741f);color:#1a1305;box-shadow:0 2px 10px rgba(184,145,47,.4)}
+.top-right{display:flex;align-items:center;gap:8px}
+.fb-pill{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);border-radius:20px;padding:4px 12px;font-size:9.5px;font-weight:700}
+.fb-dot{width:7px;height:7px;border-radius:50%}
+.fb-dot.ok{background:var(--grn);box-shadow:0 0 6px var(--grn)}
+.fb-dot.err{background:var(--red);box-shadow:0 0 6px var(--red)}
+.fb-dot.spin{background:var(--org);animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ===== Context bar (school / session) ===== */
+.context-bar{background:linear-gradient(90deg,#0a1428,var(--navy));color:#fff;height:34px;display:flex;align-items:center;padding:0 16px;gap:8px;font-size:10px;border-bottom:1px solid rgba(255,255,255,.1);flex-shrink:0}
+.ctx-sel{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);color:#fff;padding:3px 9px;border-radius:5px;font-size:10.5px;font-weight:700;font-family:'Raleway',sans-serif;cursor:pointer;outline:none}
+.ctx-sel option{background:var(--navy);color:#fff}
+.ctx-btn{padding:3px 9px;border-radius:5px;font-size:9.5px;font-weight:700;cursor:pointer;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.1);color:#fff;font-family:'Raleway',sans-serif;transition:all .15s}
+.ctx-btn:hover{background:rgba(255,255,255,.2)}
+
+.app-body{display:flex;flex:1;overflow:hidden}
+.main{flex:1;overflow-y:auto;padding:22px 26px}
+.side{width:300px;min-width:300px;background:var(--panel);border-left:1px solid var(--bdr);overflow-y:auto;flex-shrink:0;box-shadow:-2px 0 14px rgba(0,0,0,.05)}
+.side-hdr{background:linear-gradient(120deg,var(--navy),var(--deep));color:#fff;padding:11px 14px;font-size:10.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;border-bottom:3px solid var(--gold)}
+.side-body{padding:10px}
+
+.page-title{font-family:'Cinzel',serif;font-size:24px;font-weight:700;color:var(--navy);margin-bottom:4px}
+.page-sub{color:var(--tx2);font-size:11.5px;margin-bottom:16px;line-height:1.6}
+
+.btn{display:inline-flex;align-items:center;gap:5px;padding:8px 15px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;border:none;transition:all .15s;white-space:nowrap;font-family:'Raleway',sans-serif;letter-spacing:.3px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-gold{background:linear-gradient(135deg,var(--gold),#96741f);color:#1a1305;box-shadow:0 2px 8px rgba(184,145,47,.35)}.btn-gold:hover:not(:disabled){filter:brightness(1.08)}
+.btn-navy{background:var(--navy);color:#fff}.btn-navy:hover:not(:disabled){background:#182a4d}
+.btn-ghost{background:#fff;color:var(--navy);border:1.4px solid var(--bdr2)}.btn-ghost:hover:not(:disabled){background:#fbf6e8}
+.btn-red{background:rgba(194,59,59,.1);color:var(--red);border:1px solid rgba(194,59,59,.28)}.btn-red:hover:not(:disabled){background:rgba(194,59,59,.2)}
+.btn-grn{background:rgba(18,122,82,.1);color:var(--grn);border:1px solid rgba(18,122,82,.28)}.btn-grn:hover:not(:disabled){background:rgba(18,122,82,.2)}
+.btn-wa{background:#25D366;color:#fff}.btn-wa:hover:not(:disabled){background:#1ebe58}
+.btn-sm{padding:5px 10px;font-size:9.5px}
+.btn-xs{padding:3px 7px;font-size:8.5px}
+
+/* ===== Certificate Type cards (list) ===== */
+.type-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+.type-card{background:var(--panel);border:1.5px solid var(--bdr);border-radius:10px;overflow:hidden;cursor:pointer;transition:all .18s;box-shadow:0 2px 10px rgba(0,0,0,.05)}
+.type-card:hover{border-color:var(--gold);box-shadow:0 6px 22px rgba(184,145,47,.22);transform:translateY(-2px)}
+.type-thumb{width:100%;height:130px;object-fit:cover;background:#ece3d0;display:block}
+.type-info{padding:10px 12px}
+.type-name{font-family:'Cinzel',serif;font-weight:700;font-size:13px;color:var(--navy);margin-bottom:2px}
+.type-meta{font-size:9.5px;color:var(--tx3)}
+.type-actions{display:flex;gap:5px;padding:0 12px 10px}
+.add-type-card{border:2.5px dashed var(--bdr2);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:210px;cursor:pointer;color:var(--tx2);background:#fffdf6;transition:all .18s}
+.add-type-card:hover{border-color:var(--gold);color:var(--gold)}
+.add-type-card .aic{font-size:34px}
+
+/* ===== Modals ===== */
+.modal-bg{position:fixed;inset:0;background:rgba(20,15,5,.55);z-index:1000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);padding:20px}
+.modal{background:var(--panel);border-radius:12px;padding:22px;max-width:640px;width:100%;max-height:88vh;overflow-y:auto;box-shadow:0 24px 70px rgba(0,0,0,.35);border-top:4px solid var(--gold)}
+.modal-hdr-row{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+.modal-back{width:28px;height:28px;border-radius:6px;background:#fbf6e8;border:1px solid var(--bdr2);color:var(--navy);font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.modal-back:hover{background:var(--gold);color:#fff}
+.modal h3{font-family:'Cinzel',serif;font-size:18px;font-weight:700;color:var(--navy);margin:0}
+.f-lbl{font-size:10px;font-weight:700;color:var(--tx2);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px}
+.f-input,.f-select{width:100%;border:1.4px solid var(--bdr2);border-radius:6px;padding:8px 11px;font-size:12px;outline:none;font-family:'Raleway',sans-serif;background:#fff;margin-bottom:11px}
+.f-input:focus,.f-select:focus{border-color:var(--gold)}
+.upload-zone{border:2.5px dashed var(--bdr2);border-radius:10px;padding:30px 16px;text-align:center;cursor:pointer;background:#fffdf6;transition:all .2s;margin-bottom:12px}
+.upload-zone:hover{border-color:var(--gold);background:#fbf5e4}
+.upload-zone img{max-width:100%;max-height:160px;border-radius:6px;margin-bottom:8px}
+.label-row{display:flex;gap:6px;align-items:center;margin-bottom:7px;background:#fbf6e8;border:1px solid var(--bdr);border-radius:7px;padding:7px 9px}
+.label-row input[type=text]{flex:1;border:1px solid var(--bdr2);border-radius:5px;padding:5px 8px;font-size:11px;outline:none;font-family:'Raleway',sans-serif}
+.label-row select{border:1px solid var(--bdr2);border-radius:5px;padding:5px 6px;font-size:10px;outline:none;font-family:'Raleway',sans-serif;background:#fff}
+.label-row .lr-del{background:rgba(194,59,59,.12);border:1px solid rgba(194,59,59,.3);color:var(--red);border-radius:5px;width:24px;height:24px;cursor:pointer;font-size:11px;flex-shrink:0}
+.chip-suggest{display:inline-flex;align-items:center;background:#fff;border:1px solid var(--bdr2);border-radius:20px;padding:4px 11px;font-size:9.5px;font-weight:700;color:var(--navy);margin:2px;cursor:pointer;transition:all .15s}
+.chip-suggest:hover{background:var(--gold);color:#fff;border-color:var(--gold)}
+
+/* ===== Certificate frame (rendered canvas) ===== */
+.cert-outer{background:#e7ded0;border-radius:10px;padding:20px;overflow:auto}
+.cert-frame{position:relative;background:#fff;box-shadow:0 8px 40px rgba(0,0,0,.22);margin:0 auto;overflow:hidden;border-radius:4px}
+.cert-frame img.cert-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
+.cert-label{position:absolute;white-space:nowrap;z-index:5;user-select:none;cursor:pointer;padding:1px 4px;border-radius:3px;transition:box-shadow .12s}
+.cert-label.selected{box-shadow:0 0 0 2px var(--purple),0 0 0 5px rgba(107,63,160,.15)}
+.cert-label:hover{box-shadow:0 0 0 2px rgba(107,63,160,.4)}
+.cert-qr-block{position:absolute;z-index:6;cursor:pointer;background:#fff;padding:3px;border-radius:4px;border:1px solid rgba(0,0,0,.12);box-shadow:0 1px 4px rgba(0,0,0,.15)}
+.cert-qr-block.selected{box-shadow:0 0 0 2px var(--purple)}
+.cert-idtext{position:absolute;z-index:6;font-family:'Barlow Condensed',monospace;letter-spacing:.5px;cursor:pointer;padding:1px 4px;border-radius:3px}
+.cert-idtext.selected{box-shadow:0 0 0 2px var(--purple)}
+
+/* ===== Designer sidebar blocks ===== */
+.dz-sec{margin-bottom:8px;border:1px solid var(--bdr);border-radius:8px;overflow:hidden}
+.dz-sec-hdr{padding:8px 11px;background:linear-gradient(90deg,#fbf6e8,#f4ecd6);font-size:10px;font-weight:800;color:var(--navy);letter-spacing:.4px;text-transform:uppercase}
+.dz-sec-body{padding:10px;background:#fff}
+.arr-btn{width:22px;height:22px;display:flex;align-items:center;justify-content:center;background:#fbf6e8;border:1px solid var(--bdr2);border-radius:4px;font-size:10px;font-weight:700;color:var(--navy);cursor:pointer;flex-shrink:0}
+.arr-btn:hover{background:var(--gold);color:#fff;border-color:var(--gold)}
+.arr-btn.rst{font-size:8px;width:20px;height:20px;background:#fdf0f0;border-color:#f0b8b8;color:var(--red)}
+.arr-btn.rst:hover{background:var(--red);color:#fff}
+.sld-row{display:flex;align-items:center;gap:4px;margin-bottom:5px}
+.sld-lbl{font-size:9px;color:var(--tx2);font-weight:700;text-transform:uppercase;min-width:36px}
+.sld-val{font-size:9px;color:var(--gold);font-weight:800;min-width:34px;text-align:right}
+input[type=range]{flex:1;accent-color:var(--gold);height:3px;cursor:pointer}
+input[type=color]{width:30px;height:22px;border:1px solid var(--bdr2);border-radius:4px;cursor:pointer;background:none;padding:1px}
+.tog{position:relative;display:inline-block;width:30px;height:16px;flex-shrink:0}
+.tog input{opacity:0;width:0;height:0}
+.tog-sl{position:absolute;cursor:pointer;inset:0;background:#ccc;border-radius:16px;transition:.25s}
+.tog-sl:before{content:'';position:absolute;height:10px;width:10px;left:3px;bottom:3px;background:white;border-radius:50%;transition:.25s}
+input:checked+.tog-sl{background:var(--gold)}
+input:checked+.tog-sl:before{transform:translateX(14px)}
+
+/* ===== Form fields (create tab) ===== */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:780px;margin-bottom:14px}
+.form-field label{font-size:10px;font-weight:700;color:var(--tx2);text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:4px}
+.form-field input{width:100%;border:1.4px solid var(--bdr2);border-radius:6px;padding:8px 11px;font-size:12px;outline:none;font-family:'Raleway',sans-serif;background:#fff}
+.form-field input:focus{border-color:var(--gold)}
+
+/* ===== History / Gallery ===== */
+.hist-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.hist-card{background:var(--panel);border:1.5px solid var(--bdr);border-radius:10px;padding:12px;transition:all .15s}
+.hist-card:hover{border-color:var(--gold);box-shadow:0 4px 16px rgba(184,145,47,.15)}
+.hist-name{font-family:'Cinzel',serif;font-weight:700;font-size:13.5px;color:var(--navy)}
+.hist-meta{font-size:9.5px;color:var(--tx2);line-height:1.7;margin:5px 0 8px}
+.hist-id{display:inline-block;background:#fbf6e8;border:1px solid var(--bdr2);border-radius:4px;padding:2px 7px;font-size:9px;font-family:monospace;color:var(--navy);font-weight:700}
+.filter-bar{display:flex;gap:7px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+.filter-bar input,.filter-bar select{background:#fff;border:1.3px solid var(--bdr2);border-radius:6px;color:var(--tx);padding:7px 10px;font-size:11px;outline:none;font-family:'Raleway',sans-serif}
+.filter-bar input{flex:1;min-width:160px}
+.cat-section{margin-bottom:26px}
+.cat-hdr{display:flex;align-items:center;gap:8px;margin-bottom:11px;padding-bottom:7px;border-bottom:2px solid var(--bdr2)}
+.cat-hdr h3{font-family:'Cinzel',serif;font-size:15px;font-weight:700;color:var(--navy)}
+.cat-count{background:var(--gold);color:#fff;border-radius:20px;padding:1px 10px;font-size:10px;font-weight:800}
+
+/* ===== Toast ===== */
+.toast{display:flex;align-items:center;gap:7px;padding:9px 15px;border-radius:7px;font-size:11px;font-weight:700;min-width:200px;animation:tin .3s ease;box-shadow:0 4px 20px rgba(0,0,0,.2)}
+.toast.s{background:#ecfdf5;border:1px solid var(--grn);color:#065f37}
+.toast.e{background:#fef2f2;border:1px solid var(--red);color:#8f2020}
+.toast.w{background:#fffbeb;border:1px solid var(--org);color:#7a5108}
+.toast.i{background:#eff6ff;border:1px solid #2563eb;color:#1e40af}
+@keyframes tin{from{transform:translateX(110%);opacity:0}to{transform:translateX(0);opacity:1}}
+
+/* ===== Verify overlay ===== */
+.verify-overlay{position:fixed;inset:0;background:rgba(10,8,3,.9);z-index:3000;display:flex;align-items:flex-start;justify-content:center;padding:24px;overflow-y:auto}
+.verify-card{background:#fdfaf2;max-width:560px;width:100%;border-radius:14px;overflow:hidden;box-shadow:0 24px 90px rgba(0,0,0,.5);margin:auto;border-top:5px solid var(--gold)}
+.verify-hdr{background:linear-gradient(120deg,var(--navy),var(--deep));padding:22px;text-align:center}
+.verify-badge{display:inline-flex;align-items:center;gap:7px;background:linear-gradient(135deg,#0d5c3d,var(--grn));color:#fff;padding:7px 20px;border-radius:50px;font-size:12.5px;font-weight:800;letter-spacing:.6px;margin-bottom:10px;box-shadow:0 4px 16px rgba(18,122,82,.4)}
+.verify-close{position:fixed;top:16px;right:16px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:16px;z-index:3001}
+.verify-close:hover{background:rgba(255,255,255,.25)}
+.verify-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0}
+.verify-field{background:#fff;border-radius:7px;padding:9px;border:1px solid var(--bdr)}
+.verify-field-lbl{font-size:8.5px;font-weight:800;color:var(--tx3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
+.verify-field-val{font-size:12px;font-weight:700;color:var(--navy);font-family:'Cinzel',serif}
+.verify-name-banner{background:linear-gradient(135deg,#ecfdf5,#d1fae5);border:2px solid var(--grn);border-radius:9px;padding:14px;text-align:center;margin-top:12px}
+.verify-name-banner .vnb-name{font-family:'Cinzel',serif;font-size:17px;font-weight:800;color:#065f37;margin-bottom:2px}
+.verify-name-banner .vnb-sub{font-size:11px;color:#0d5c3d;font-weight:700}
+
+/* ===== School loading / not-found screen ===== */
+.setup-overlay{position:fixed;inset:0;background:linear-gradient(135deg,var(--navy),var(--deep));z-index:99998;display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto}
+.setup-card{background:#fffdf8;border-radius:16px;width:100%;max-width:520px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.4)}
+.setup-hdr{background:linear-gradient(135deg,var(--navy),var(--deep));padding:22px;text-align:center;border-bottom:3px solid var(--gold)}
+.setup-body{padding:26px;text-align:center}
+.session-chip{display:inline-flex;align-items:center;background:#fbf6e8;border:1px solid var(--bdr2);border-radius:20px;padding:3px 10px;font-size:9px;font-weight:700;color:var(--navy);margin:2px;cursor:pointer;transition:all .15s}
+.session-chip:hover{background:#f4ecd6}
+.session-chip.active{background:var(--navy);color:#fff;border-color:var(--navy)}
+
+.skel{height:60px;background:linear-gradient(90deg,#eee3c8 25%,#e0d5b4 50%,#eee3c8 75%);background-size:200%;animation:shim 1.4s infinite;border-radius:8px;margin-bottom:8px}
+@keyframes shim{0%{background-position:200%}100%{background-position:-200%}}
+
+@media print{
+  @page{size:A4 landscape;margin:0}
+  *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+  body *{visibility:hidden!important}
+  #print-target, #print-target *{visibility:visible!important}
+  html,body{background:#fff!important;height:auto!important;overflow:visible!important;margin:0!important}
+  #print-target{display:block!important;position:fixed!important;top:0!important;left:0!important;width:100vw;height:100vh;margin:0;padding:0;overflow:hidden;z-index:99999}
+  #print-target .cert-frame{margin:0!important;transform:scale(1.2476);transform-origin:top left;}
+}
+#print-target{position:absolute;left:-99999px;top:0;pointer-events:none}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="toast-root" style="position:fixed;top:12px;right:12px;z-index:9999;display:flex;flex-direction:column;gap:6px;pointer-events:none"></div>
+
+<script type="text/babel">
+const {useState,useEffect,useRef,useMemo,useCallback,memo}=React;
+
+/* ============================ CONSTANTS ============================ */
+const FONTS=[
+  {g:'Elegant Serif',items:[
+    {l:'Playfair Display',v:"'Playfair Display',serif"},{l:'Cinzel',v:"'Cinzel',serif"},
+    {l:'Cormorant Garamond',v:"'Cormorant Garamond',serif"},{l:'EB Garamond',v:"'EB Garamond',serif"},
+    {l:'Marcellus',v:"'Marcellus',serif"},
+  ]},
+  {g:'Script / Signature',items:[
+    {l:'Great Vibes',v:"'Great Vibes',cursive"},{l:'Dancing Script',v:"'Dancing Script',cursive"},
+    {l:'Tangerine',v:"'Tangerine',cursive"},{l:'Sacramento',v:"'Sacramento',cursive"},
+    {l:'Pacifico',v:"'Pacifico',cursive"},{l:'Caveat',v:"'Caveat',cursive"},
+    {l:'Kalam',v:"'Kalam',cursive"},{l:'Satisfy',v:"'Satisfy',cursive"},
+    {l:'Indie Flower',v:"'Indie Flower',cursive"},{l:'Permanent Marker',v:"'Permanent Marker',cursive"},
+    {l:'Shadows Into Light',v:"'Shadows Into Light',cursive"},{l:'Allura',v:"'Allura',cursive"},
+    {l:'Alex Brush',v:"'Alex Brush',cursive"},
+  ]},
+  {g:'Modern Sans',items:[
+    {l:'Raleway',v:"'Raleway',sans-serif"},{l:'Barlow',v:"'Barlow',sans-serif"},
+    {l:'Barlow Condensed',v:"'Barlow Condensed',sans-serif"},{l:'Poppins',v:"'Poppins',sans-serif"},
+  ]},
+  {g:'System',items:[
+    {l:'Arial',v:"Arial,sans-serif"},{l:'Times New Roman',v:"'Times New Roman',serif"},
+    {l:'Georgia',v:"Georgia,serif"},
+  ]},
+];
+const ALL_FONTS=FONTS.flatMap(g=>g.items);
+const SUGGESTED_LABELS=["Student Name","Class","Roll Number","Father's Name","Event Name","Week","Month","Rank / Position","Academic Year","Course","Instructor / Principal"];
+const DEFAULT_CATEGORIES=["Appreciation","Excellence","Sports","Topper","Student of the Year","Participation","Merit","Completion","Honor Roll"];
+
+const loadedFonts=new Set(['Raleway','Barlow','Barlow Condensed','Playfair Display','Cinzel','Cormorant Garamond','Great Vibes','Dancing Script','Poppins','Marcellus','EB Garamond','Tangerine','Sacramento']);
+function ensureFontLoaded(fv){
+  const name=fv.replace(/['"]/g,'').split(',')[0].trim();
+  if(loadedFonts.has(name))return; loadedFonts.add(name);
+  const slug=name.replace(/\s+/g,'+');
+  const link=document.createElement('link'); link.rel='stylesheet';
+  link.href=`https://fonts.googleapis.com/css2?family=${slug}:wght@400;700&display=swap`;
+  document.head.appendChild(link);
+}
+
+function showToast(msg,type='i'){
+  const c=document.getElementById('toast-root');
+  const el=document.createElement('div'); el.className=`toast ${type}`;
+  const ic={s:'✓',e:'✗',w:'⚠',i:'ℹ'}[type]||'ℹ';
+  el.innerHTML=`<span style="font-size:14px">${ic}</span><span>${msg}</span>`;
+  el.style.pointerEvents='all'; c.appendChild(el);
+  setTimeout(()=>{el.style.animation='tin .3s reverse'; setTimeout(()=>el.remove(),280);},3200);
+}
+
+function genCertId(){
+  const chars='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let rand='';
+  for(let i=0;i<5;i++) rand+=chars[Math.floor(Math.random()*chars.length)];
+  return `CF_ID ${rand}`;
+}
+function uid(prefix){ return `${prefix||'id'}_${Date.now()}_${Math.random().toString(36).slice(2,8)}`; }
+function slugKey(label){ return label.toUpperCase().replace(/[^A-Z0-9]+/g,'_').replace(/^_|_$/g,'')||('FIELD_'+Math.random().toString(36).slice(2,5)); }
+function fmtDate(iso){
+  if(!iso) return '';
+  const d=new Date(iso+'T00:00:00');
+  if(isNaN(d)) return iso;
+  const dd=String(d.getDate()).padStart(2,'0');
+  const mm=String(d.getMonth()+1).padStart(2,'0');
+  return `${dd}/${mm}/${d.getFullYear()}`;
+}
+async function waitForImagesLoaded(container, timeout=4000){
+  const imgs = Array.from(container.querySelectorAll('img'));
+  const start = Date.now();
+  await Promise.all(imgs.map(img => new Promise(resolve=>{
+    if(img.complete && img.naturalWidth>0) return resolve();
+    const done=()=>resolve();
+    img.addEventListener('load', done, {once:true});
+    img.addEventListener('error', done, {once:true});
+    setTimeout(done, Math.max(0, timeout-(Date.now()-start)));
+  })));
+}
+
+const ORIENTATIONS={
+  landscape:{w:900,h:636},
+  portrait:{w:636,h:900},
+};
+
+const DEFAULT_QR={show:true,x:0,y:0,size:70,position:'bottom-right'};
+const DEFAULT_IDTEXT={show:true,x:0,y:0,fontSize:9,color:'#333333'};
+
+function defaultLabelStyle(i){
+  return {fontSize:16,fontFamily:ALL_FONTS[0].v,color:'#1c2430',bold:false,italic:false,align:'center',x:0,y:260+i*46,letterSpacing:0};
+}
+
+/* ============================ SMALL UI HELPERS ============================ */
+function SliderRow({label,val,min,max,step=1,unit='',onChange,arrowStep}){
+  const aStep=arrowStep||step;
+  const clamp=v=>Math.min(max,Math.max(min,parseFloat((+v).toFixed(step<1?2:0))));
+  return(
+    <div style={{marginBottom:6}}>
+      <div className="sld-row">
+        <span className="sld-lbl">{label}</span>
+        <button className="arr-btn" onClick={()=>onChange(clamp(val-aStep))}>◀</button>
+        <input type="range" min={min} max={max} step={step} value={val} onChange={e=>onChange(clamp(e.target.value))}/>
+        <button className="arr-btn" onClick={()=>onChange(clamp(val+aStep))}>▶</button>
+        <span className="sld-val">{val}{unit}</span>
+      </div>
+    </div>
+  );
+}
+function XY({x,y,onX,onY,min=-800,max=800,onReset}){
+  const cl=(v)=>Math.min(max,Math.max(min,v));
+  return(
+    <div style={{marginBottom:6}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:3}}>
+        <span style={{fontSize:9,fontWeight:800,color:'var(--navy)',textTransform:'uppercase'}}>Position</span>
+        {onReset&&<button className="arr-btn rst" onClick={onReset}>↺</button>}
+      </div>
+      <div className="sld-row"><span className="sld-lbl">◀▶</span><button className="arr-btn" onClick={()=>onX(cl(x-1))}>◀</button><input type="range" min={min} max={max} value={x} onChange={e=>onX(cl(+e.target.value))}/><button className="arr-btn" onClick={()=>onX(cl(x+1))}>▶</button><span className="sld-val">{x}</span></div>
+      <div className="sld-row"><span className="sld-lbl">▲▼</span><button className="arr-btn" onClick={()=>onY(cl(y-1))}>▲</button><input type="range" min={min} max={max} value={y} onChange={e=>onY(cl(+e.target.value))}/><button className="arr-btn" onClick={()=>onY(cl(y+1))}>▼</button><span className="sld-val">{y}</span></div>
+    </div>
+  );
+}
+function FontPick({value,onChange}){
+  return(
+    <select className="f-select" style={{marginBottom:6,fontFamily:value}} value={value} onChange={e=>{ensureFontLoaded(e.target.value);onChange(e.target.value);}}>
+      {FONTS.map(g=>(<optgroup key={g.g} label={g.g}>{g.items.map(f=><option key={f.v} value={f.v} style={{fontFamily:f.v}}>{f.l}</option>)}</optgroup>))}
+    </select>
+  );
+}
+
+/* ============================ QR CODE ============================ */
+const QRBox=memo(function QRBox({url,size}){
+  const ref=useRef();
+  useEffect(()=>{
+    if(!ref.current||!url)return;
+    ref.current.innerHTML='';
+    try{ new QRCode(ref.current,{text:url,width:size,height:size,colorDark:'#000',colorLight:'#fff',correctLevel:QRCode.CorrectLevel.H}); }
+    catch(e){ console.warn('QR err',e); }
+  },[url,size]);
+  return <div ref={ref} style={{width:size,height:size}}/>;
+});
+
+/* ============================ CERTIFICATE RENDER ============================ */
+const CertificateView=memo(function CertificateView({certType,values,certId,scale=1,selectedLabelId,onSelectLabel,verifyBaseUrl,verifyParam='verify',interactive=false}){
+  if(!certType) return null;
+  const dim=ORIENTATIONS[certType.orientation||'landscape'];
+  const W=dim.w*scale, H=dim.h*scale;
+  const qr=certType.qr||DEFAULT_QR;
+  const idt=certType.idText||DEFAULT_IDTEXT;
+  const verifyUrl = certId && verifyBaseUrl ? `${verifyBaseUrl.replace(/\/$/,'')}${verifyBaseUrl.includes('?')?'&':'?'}${verifyParam}=${encodeURIComponent(certId)}` : (certId?`#verify=${encodeURIComponent(certId)}`:'');
+  const qrStyle={position:'absolute',zIndex:6};
+  const qrSizePx=(qr.size||70)*scale;
+  if((qr.position||'bottom-right')==='bottom-right'){ qrStyle.right=(14-(qr.x||0))*scale; qrStyle.bottom=(14+(qr.y||0))*scale; }
+  else if(qr.position==='bottom-left'){ qrStyle.left=(14+(qr.x||0))*scale; qrStyle.bottom=(14+(qr.y||0))*scale; }
+  else if(qr.position==='top-right'){ qrStyle.right=(14-(qr.x||0))*scale; qrStyle.top=(14+(qr.y||0))*scale; }
+  else { qrStyle.left=(14+(qr.x||0))*scale; qrStyle.top=(14+(qr.y||0))*scale; }
+
+  return(
+    <div className="cert-frame" style={{width:W,height:H}}>
+      {certType.templateImage && <img className="cert-bg" src={certType.templateImage} alt="template" crossOrigin="anonymous"/>}
+      {(certType.labels||[]).map(lb=>{
+        const st=lb.style||defaultLabelStyle(0);
+        let val=(values&&values[lb.key])||'';
+        if(lb.type==='date' && val) val=fmtDate(val);
+        const isSel=selectedLabelId===lb.id;
+        return(
+          <div key={lb.id}
+            className={`cert-label${isSel?' selected':''}`}
+            onClick={interactive?(e)=>{e.stopPropagation();onSelectLabel&&onSelectLabel(lb.id);}:undefined}
+            style={{
+              left:'50%', top:(st.y||0)*scale,
+              transform:`translate(calc(-50% + ${(st.x||0)*scale}px),0)`,
+              fontFamily:st.fontFamily||ALL_FONTS[0].v,
+              fontSize:(st.fontSize||16)*scale,
+              color:st.color||'#1c2430',
+              fontWeight:st.bold?800:500,
+              fontStyle:st.italic?'italic':'normal',
+              textAlign:st.align||'center',
+              letterSpacing:(st.letterSpacing||0)+'px',
+              cursor:interactive?'pointer':'default'
+            }}>{val || `{{${lb.label}}}`}</div>
+        );
+      })}
+      {idt.show!==false && certId && (
+        <div className={`cert-idtext${selectedLabelId==='__idtext__'?' selected':''}`}
+          onClick={interactive?(e)=>{e.stopPropagation();onSelectLabel&&onSelectLabel('__idtext__');}:undefined}
+          style={{left:12+(idt.x||0)*scale,bottom:10+(-(idt.y||0))*scale,fontSize:(idt.fontSize||9)*scale,color:idt.color||'#333',cursor:interactive?'pointer':'default'}}>
+          ID: {certId}
+        </div>
+      )}
+      {qr.show!==false && (
+        <div className={`cert-qr-block${selectedLabelId==='__qr__'?' selected':''}`} style={qrStyle}
+          onClick={interactive?(e)=>{e.stopPropagation();onSelectLabel&&onSelectLabel('__qr__');}:undefined}>
+          {verifyUrl ? <QRBox url={verifyUrl} size={qrSizePx}/> : <div style={{width:qrSizePx,height:qrSizePx,background:'#eee',display:'flex',alignItems:'center',justifyContent:'center',fontSize:9*scale,color:'#999'}}>QR</div>}
+        </div>
+      )}
+    </div>
+  );
+});
+
+/* ============================ CREATE CERT-TYPE MODAL (upload + labels) ============================ */
+function CreateTypeModal({onClose,onCreated,fbOk,existingCategories}){
+  const [step,setStep]=useState(1); // 1 upload, 2 details+labels
+  const [templateImage,setTemplateImage]=useState(null);
+  const [name,setName]=useState('');
+  const [listName,setListName]=useState(existingCategories[0]||DEFAULT_CATEGORIES[0]);
+  const [orientation,setOrientation]=useState('landscape');
+  const [labels,setLabels]=useState([{id:uid('lb'),label:'Student Name',key:'STUDENT_NAME',type:'text'}]);
+  const [saving,setSaving]=useState(false);
+  const fileRef=useRef();
+  const allCats=[...new Set([...existingCategories,...DEFAULT_CATEGORIES])];
+
+  const handleFile=async(f)=>{
+    if(!f||!f.type.match(/image\//)){showToast('Please upload an image file','e');return;}
+    const reader=new FileReader();
+    reader.onload=e=>{ setTemplateImage(e.target.result); setStep(2); };
+    reader.readAsDataURL(f);
+  };
+  const addLabel=(preset,type)=>{
+    const lbl=preset||'New Field';
+    setLabels(ls=>[...ls,{id:uid('lb'),label:lbl,key:slugKey(lbl)+'_'+ls.length,type:type||'text'}]);
+  };
+  const updateLabel=(id,txt)=>setLabels(ls=>ls.map(l=>l.id===id?{...l,label:txt,key:slugKey(txt)}:l));
+  const updateLabelType=(id,type)=>setLabels(ls=>ls.map(l=>l.id===id?{...l,type}:l));
+  const removeLabel=(id)=>setLabels(ls=>ls.filter(l=>l.id!==id));
+
+  const create=async()=>{
+    if(!name.trim()){showToast('Enter a certificate type name','w');return;}
+    if(!listName.trim()){showToast('Enter or select a category','w');return;}
+    if(!labels.length){showToast('Add at least one label','w');return;}
+    setSaving(true);
+    let img=templateImage;
+    const cloudReady=window.CLOUDINARY_CONFIG.cloudName&&window.CLOUDINARY_CONFIG.cloudName!=='YOUR_CLOUD_NAME';
+    if(cloudReady){ try{ img=await window.uploadToCloudinary(templateImage, window.CLOUDINARY_CONFIG.folder+'/templates'); }catch(e){ console.warn(e); } }
+    const ct={
+      id:uid('ctype'), name:name.trim(), listName:listName.trim(), orientation,
+      templateImage:img,
+      labels: labels.map((l,i)=>({id:l.id,label:l.label,key:l.key,type:l.type||'text',style:defaultLabelStyle(i)})),
+      qr:{...DEFAULT_QR}, idText:{...DEFAULT_IDTEXT},
+      createdAt:Date.now()
+    };
+    onCreated(ct);
+    setSaving(false);
+  };
+
+  return(
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <div className="modal-hdr-row">
+          {step===2 && <button className="modal-back" onClick={()=>setStep(1)}>←</button>}
+          <h3>🏆 New Certificate Type — Step {step} of 2</h3>
+        </div>
+        {step===1 && (<>
+          <div className="upload-zone" onClick={()=>fileRef.current.click()} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();handleFile(e.dataTransfer.files[0]);}}>
+            <div style={{fontSize:34,marginBottom:8}}>🖼️</div>
+            <div style={{fontWeight:700,color:'var(--navy)',fontSize:13}}>Upload Certificate Template</div>
+            <div style={{fontSize:10,color:'var(--tx2)',marginTop:4}}>PNG / JPG · Saved exactly as uploaded</div>
+            <input ref={fileRef} type="file" accept="image/*" style={{display:'none'}} onChange={e=>handleFile(e.target.files[0])}/>
+          </div>
+          <div style={{display:'flex',justifyContent:'flex-end'}}><button className="btn btn-ghost" onClick={onClose}>Cancel</button></div>
+        </>)}
+        {step===2 && (<>
+          <img src={templateImage} style={{width:'100%',maxHeight:160,objectFit:'contain',background:'#f4efe4',borderRadius:8,marginBottom:12}} alt=""/>
+          <span className="f-lbl">Certificate Name (internal)</span>
+          <input className="f-input" placeholder="e.g. UMS Annual Sports 2026" value={name} onChange={e=>setName(e.target.value)}/>
+          <span className="f-lbl">Certificate List / Category</span>
+          <input className="f-input" list="cert-cat-list" placeholder="Type new or pick existing category…" value={listName} onChange={e=>setListName(e.target.value)}/>
+          <datalist id="cert-cat-list">{allCats.map(c=><option key={c} value={c}/>)}</datalist>
+          <span className="f-lbl">Orientation</span>
+          <div style={{display:'flex',gap:6,marginBottom:11}}>
+            {['landscape','portrait'].map(o=>(<button key={o} onClick={()=>setOrientation(o)} style={{flex:1,padding:'7px',fontSize:11,fontWeight:700,border:'1.4px solid',borderColor:orientation===o?'var(--gold)':'var(--bdr2)',background:orientation===o?'#fbf1d8':'#fff',color:orientation===o?'var(--navy)':'var(--tx2)',borderRadius:6,cursor:'pointer'}}>{o==='landscape'?'▭ Landscape':'▯ Portrait'}</button>))}
+          </div>
+
+          <div style={{fontSize:11,fontWeight:800,color:'var(--navy)',textTransform:'uppercase',letterSpacing:.4,marginBottom:6}}>What does this certificate contain? (Labels)</div>
+          <div style={{marginBottom:8}}>
+            {SUGGESTED_LABELS.filter(s=>!labels.find(l=>l.label===s)).map(s=>(<span key={s} className="chip-suggest" onClick={()=>addLabel(s,'text')}>+ {s}</span>))}
+            {!labels.find(l=>l.type==='date') && <span className="chip-suggest" style={{background:'#fbf1d8'}} onClick={()=>addLabel('Date','date')}>📅 + Date</span>}
+          </div>
+          {labels.map(l=>(
+            <div className="label-row" key={l.id}>
+              <input type="text" value={l.label} onChange={e=>updateLabel(l.id,e.target.value)} placeholder="Label name"/>
+              <select value={l.type||'text'} onChange={e=>updateLabelType(l.id,e.target.value)}>
+                <option value="text">Text</option>
+                <option value="date">📅 Date</option>
+              </select>
+              <button className="lr-del" onClick={()=>removeLabel(l.id)}>✕</button>
+            </div>
+          ))}
+          <button className="btn btn-ghost btn-sm" style={{marginBottom:14}} onClick={()=>addLabel()}>➕ Add Custom Label</button>
+
+          <div style={{display:'flex',gap:8}}>
+            <button className="btn btn-gold" style={{flex:1}} onClick={create} disabled={saving}>{saving?'Creating…':'✓ Create Certificate Type'}</button>
+            <button className="btn btn-ghost" onClick={()=>setStep(1)}>← Back</button>
+          </div>
+        </>)}
+      </div>
+    </div>
+  );
+}
+
+/* ============================ TYPES TAB ============================ */
+function TypesTab({certTypes,onOpenCreate,onSelectDesign,onDelete}){
+  return(
+    <div>
+      <div className="page-title">Certificate Types</div>
+      <div className="page-sub">Upload a template once, define its labels, then reuse it to generate certificates. Click a type to design or delete it.</div>
+      <div className="type-grid">
+        <div className="add-type-card" onClick={onOpenCreate}>
+          <div className="aic">➕</div>
+          <div style={{fontWeight:700,fontSize:12}}>Create New Type</div>
+        </div>
+        {certTypes.map(ct=>(
+          <div className="type-card" key={ct.id}>
+            <img className="type-thumb" src={ct.templateImage} alt={ct.name} onClick={()=>onSelectDesign(ct.id)}/>
+            <div className="type-info" onClick={()=>onSelectDesign(ct.id)}>
+              <div className="type-name">{ct.name}</div>
+              <div className="type-meta">{ct.listName} · {(ct.labels||[]).length} labels · {ct.orientation}</div>
+            </div>
+            <div className="type-actions">
+              <button className="btn btn-navy btn-xs" onClick={()=>onSelectDesign(ct.id)}>🎨 Design</button>
+              <button className="btn btn-red btn-xs" onClick={()=>onDelete(ct.id)}>🗑</button>
+            </div>
+          </div>
+        ))}
+      </div>
+      {!certTypes.length && <div style={{textAlign:'center',padding:'30px 0',color:'var(--tx3)',fontSize:11}}>No certificate types yet for this school/session. Click "Create New Type" to get started.</div>}
+    </div>
+  );
+}
+
+/* ============================ DESIGNER TAB ============================ */
+function DesignerTab({certType,onUpdate,onSaveCloud,verifyBaseUrl,verifyParam,onBack}){
+  const [selected,setSelected]=useState(null);
+  const [zoom,setZoom]=useState(0.62);
+  if(!certType) return (
+    <div>
+      <div className="page-sub">Select a certificate type from the "Types" tab first.</div>
+      <button className="btn btn-ghost" onClick={onBack}>← Back to Types</button>
+    </div>
+  );
+
+  const labels=certType.labels||[];
+  const selLabel=labels.find(l=>l.id===selected);
+
+  const updateLabelStyle=(id,patch)=>{
+    onUpdate({...certType, labels: certType.labels.map(l=>l.id===id?{...l,style:{...l.style,...patch}}:l)});
+  };
+  const updateQr=(patch)=>onUpdate({...certType, qr:{...(certType.qr||DEFAULT_QR),...patch}});
+  const updateIdText=(patch)=>onUpdate({...certType, idText:{...(certType.idText||DEFAULT_IDTEXT),...patch}});
+  const addLabel=()=>{
+    const lbl='New Field';
+    const nl={id:uid('lb'),label:lbl,key:slugKey(lbl)+'_'+labels.length,type:'text',style:defaultLabelStyle(labels.length)};
+    onUpdate({...certType, labels:[...labels,nl]});
+    setSelected(nl.id);
+  };
+  const renameLabel=(id,txt)=>onUpdate({...certType, labels: labels.map(l=>l.id===id?{...l,label:txt,key:slugKey(txt)}:l)});
+  const setLabelType=(id,type)=>onUpdate({...certType, labels: labels.map(l=>l.id===id?{...l,type}:l)});
+  const deleteLabel=(id)=>{ onUpdate({...certType, labels: labels.filter(l=>l.id!==id)}); if(selected===id)setSelected(null); };
+
+  const sampleValues=Object.fromEntries(labels.map(l=>[l.key, l.type==='date'?'2026-01-15':l.label]));
+
+  return(
+    <div style={{display:'flex',gap:16}}>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{display:'flex',alignItems:'center',gap:9,marginBottom:4}}>
+          <button className="modal-back" onClick={onBack} title="Back to Types">←</button>
+          <div className="page-title" style={{marginBottom:0}}>Designer — {certType.name}</div>
+        </div>
+        <div className="page-sub">Click any text or the QR block on the certificate to select & adjust it in the panel on the right.</div>
+        <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:12}}>
+          <span style={{fontSize:10,color:'var(--tx2)'}}>Zoom</span>
+          <button className="btn btn-ghost btn-xs" onClick={()=>setZoom(z=>Math.max(.3,+(z-.08).toFixed(2)))}>−</button>
+          <span style={{fontSize:10,fontWeight:700}}>{Math.round(zoom*100)}%</span>
+          <button className="btn btn-ghost btn-xs" onClick={()=>setZoom(z=>Math.min(1,+(z+.08).toFixed(2)))}>+</button>
+          <button className="btn btn-gold btn-sm" style={{marginLeft:'auto'}} onClick={addLabel}>➕ Add Label</button>
+          <button className="btn btn-grn btn-sm" onClick={()=>onSaveCloud(certType)}>💾 Save Template</button>
+        </div>
+        <div className="cert-outer" onClick={()=>setSelected(null)}>
+          <CertificateView certType={certType} values={sampleValues} certId="CERT-SAMPLE-0000" scale={zoom} selectedLabelId={selected} onSelectLabel={setSelected} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} interactive={true}/>
+        </div>
+        <div style={{marginTop:14}}>
+          <div style={{fontSize:11,fontWeight:800,color:'var(--navy)',textTransform:'uppercase',marginBottom:6}}>All Labels</div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+            {labels.map(l=>(
+              <div key={l.id} style={{display:'flex',alignItems:'center',gap:4,background:selected===l.id?'#fbf1d8':'#fff',border:'1px solid var(--bdr2)',borderRadius:20,padding:'4px 10px'}}>
+                <span style={{fontSize:10,fontWeight:700,color:'var(--navy)',cursor:'pointer'}} onClick={()=>setSelected(l.id)}>{l.type==='date'?'📅 ':''}{l.label}</span>
+                <button className="lr-del" style={{width:16,height:16,fontSize:8}} onClick={()=>deleteLabel(l.id)}>✕</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="side" style={{position:'static',boxShadow:'none',borderLeft:'1px solid var(--bdr)'}}>
+        <div className="side-hdr">⚙ Adjust</div>
+        <div className="side-body">
+          {!selected && <div style={{fontSize:11,color:'var(--tx3)',padding:'20px 6px',textAlign:'center'}}>Select a label, the ID text, or the QR block on the certificate to adjust it here.</div>}
+
+          {selLabel && (<div className="dz-sec">
+            <div className="dz-sec-hdr">✏️ {selLabel.label}</div>
+            <div className="dz-sec-body">
+              <span className="f-lbl">Label Name</span>
+              <input className="f-input" value={selLabel.label} onChange={e=>renameLabel(selLabel.id,e.target.value)}/>
+              <span className="f-lbl">Field Type</span>
+              <select className="f-select" value={selLabel.type||'text'} onChange={e=>setLabelType(selLabel.id,e.target.value)}>
+                <option value="text">Text</option>
+                <option value="date">📅 Date</option>
+              </select>
+              <XY x={selLabel.style.x||0} y={selLabel.style.y||0} onX={v=>updateLabelStyle(selLabel.id,{x:v})} onY={v=>updateLabelStyle(selLabel.id,{y:v})} onReset={()=>updateLabelStyle(selLabel.id,{x:0})}/>
+              <SliderRow label="Size" val={selLabel.style.fontSize||16} min={8} max={72} onChange={v=>updateLabelStyle(selLabel.id,{fontSize:v})} unit="px"/>
+              <SliderRow label="Spacing" val={selLabel.style.letterSpacing||0} min={-3} max={20} step={0.5} onChange={v=>updateLabelStyle(selLabel.id,{letterSpacing:v})} unit="px"/>
+              <span className="f-lbl" style={{marginTop:6}}>Font Style</span>
+              <FontPick value={selLabel.style.fontFamily||ALL_FONTS[0].v} onChange={v=>updateLabelStyle(selLabel.id,{fontFamily:v})}/>
+              <div className="sld-row"><span className="sld-lbl">Color</span><input type="color" value={selLabel.style.color||'#1c2430'} onChange={e=>updateLabelStyle(selLabel.id,{color:e.target.value})}/></div>
+              <div style={{display:'flex',gap:5,marginTop:6}}>
+                <button className="btn btn-sm" style={{flex:1,background:selLabel.style.bold?'var(--navy)':'#f4efe4',color:selLabel.style.bold?'#fff':'var(--navy)'}} onClick={()=>updateLabelStyle(selLabel.id,{bold:!selLabel.style.bold})}><b>B</b></button>
+                <button className="btn btn-sm" style={{flex:1,background:selLabel.style.italic?'var(--navy)':'#f4efe4',color:selLabel.style.italic?'#fff':'var(--navy)'}} onClick={()=>updateLabelStyle(selLabel.id,{italic:!selLabel.style.italic})}><i>I</i></button>
+              </div>
+              <span className="f-lbl" style={{marginTop:8}}>Align</span>
+              <div style={{display:'flex',gap:4}}>{['left','center','right'].map(a=>(<button key={a} className="btn btn-sm" style={{flex:1,background:selLabel.style.align===a?'var(--navy)':'#f4efe4',color:selLabel.style.align===a?'#fff':'var(--navy)'}} onClick={()=>updateLabelStyle(selLabel.id,{align:a})}>{a[0].toUpperCase()}</button>))}</div>
+            </div>
+          </div>)}
+
+          {selected==='__idtext__' && (<div className="dz-sec">
+            <div className="dz-sec-hdr">🪪 Certificate ID Text</div>
+            <div className="dz-sec-body">
+              <div className="sld-row"><span className="sld-lbl">Show</span><label className="tog"><input type="checkbox" checked={certType.idText?.show!==false} onChange={e=>updateIdText({show:e.target.checked})}/><span className="tog-sl"/></label></div>
+              <XY x={certType.idText?.x||0} y={certType.idText?.y||0} onX={v=>updateIdText({x:v})} onY={v=>updateIdText({y:v})} min={-800} max={800}/>
+              <SliderRow label="Size" val={certType.idText?.fontSize||9} min={6} max={22} onChange={v=>updateIdText({fontSize:v})} unit="px"/>
+              <div className="sld-row"><span className="sld-lbl">Color</span><input type="color" value={certType.idText?.color||'#333333'} onChange={e=>updateIdText({color:e.target.value})}/></div>
+            </div>
+          </div>)}
+
+          {selected==='__qr__' && (<div className="dz-sec">
+            <div className="dz-sec-hdr">▦ QR Verification Code</div>
+            <div className="dz-sec-body">
+              <div className="sld-row"><span className="sld-lbl">Show</span><label className="tog"><input type="checkbox" checked={certType.qr?.show!==false} onChange={e=>updateQr({show:e.target.checked})}/><span className="tog-sl"/></label></div>
+              <span className="f-lbl">Corner</span>
+              <select className="f-select" value={certType.qr?.position||'bottom-right'} onChange={e=>updateQr({position:e.target.value})}>
+                <option value="bottom-right">Bottom Right</option>
+                <option value="bottom-left">Bottom Left</option>
+                <option value="top-right">Top Right</option>
+                <option value="top-left">Top Left</option>
+              </select>
+              <SliderRow label="Size" val={certType.qr?.size||70} min={30} max={180} onChange={v=>updateQr({size:v})} unit="px"/>
+              <XY x={certType.qr?.x||0} y={certType.qr?.y||0} onX={v=>updateQr({x:v})} onY={v=>updateQr({y:v})} min={-800} max={800} onReset={()=>updateQr({x:0,y:0})}/>
+              <div style={{fontSize:9,color:'var(--tx3)',marginTop:4,lineHeight:1.5}}>Move the QR block up / down / left / right using the sliders or arrow buttons above — position is saved with this certificate type.</div>
+            </div>
+          </div>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ CREATE CERTIFICATE TAB ============================ */
+function CreateTab({certTypes,onGenerated,fbOk,verifyBaseUrl,verifyParam,onBack}){
+  const [pickedId,setPickedId]=useState(certTypes[0]?.id||null);
+  const [values,setValues]=useState({});
+  const [generated,setGenerated]=useState(null);
+  const certType=certTypes.find(c=>c.id===pickedId);
+  const certRef=useRef();
+  const printRef=useRef();
+
+  useEffect(()=>{ setValues({}); setGenerated(null); },[pickedId]);
+
+  if(!certTypes.length){
+    return(
+      <div>
+        <div className="page-sub">No certificate types yet. Go to the <strong>Types</strong> tab and create one first.</div>
+        <button className="btn btn-ghost" onClick={onBack}>← Back to Types</button>
+      </div>
+    );
+  }
+
+  const setVal=(key,v)=>setValues(p=>({...p,[key]:v}));
+
+  const generate=async()=>{
+    if(!certType)return;
+    const missing=(certType.labels||[]).filter(l=>!values[l.key]?.trim());
+    if(missing.length){ showToast(`Fill: ${missing.map(m=>m.label).join(', ')}`,'w'); return; }
+
+    const certId=genCertId();
+    const baseCert={
+      certId, certTypeId:certType.id, certTypeName:certType.name, listName:certType.listName,
+      values:{...values}, createdAt:Date.now(), createdDate:new Date().toISOString().slice(0,10),
+      snapshot:{templateImage:certType.templateImage, labels:certType.labels, qr:certType.qr, idText:certType.idText, orientation:certType.orientation}
+    };
+
+    // Mount the hidden full-scale #print-target so we can capture it
+    setGenerated(baseCert);
+    showToast('Rendering certificate…','i');
+
+    let node=null;
+    for(let i=0;i<20;i++){
+      node = printRef.current?.querySelector('.cert-frame');
+      if(node) break;
+      await new Promise(r=>setTimeout(r,50));
+    }
+
+    let certImageUrl=null;
+    if(node){
+      try{
+        await waitForImagesLoaded(node);
+        const canvas=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:'#ffffff'});
+        const dataUrl=canvas.toDataURL('image/png');
+        const cloudReady=window.CLOUDINARY_CONFIG.cloudName && window.CLOUDINARY_CONFIG.cloudName!=='YOUR_CLOUD_NAME';
+        if(cloudReady){
+          showToast('Uploading certificate image to Cloudinary…','i');
+          try{
+            certImageUrl=await window.uploadToCloudinary(dataUrl, window.CLOUDINARY_CONFIG.folder+'/certificates');
+            showToast('Certificate image uploaded ✓','s');
+          }catch(e){
+            showToast('Cloudinary upload failed — verify page will use live render instead: '+e.message,'w');
+          }
+        }else{
+          showToast('Cloudinary not configured — verify page will use live render instead','w');
+        }
+      }catch(e){
+        showToast('Could not capture certificate image: '+e.message,'w');
+      }
+    }
+
+    const finalCert={...baseCert, certImageUrl: certImageUrl||null};
+    setGenerated(finalCert);
+
+    showToast('Saving certificate to database…','i');
+    await onGenerated(finalCert);
+  };
+
+  const doPrint=()=>{ window.print(); };
+
+  const exportPdf=async()=>{
+    if(!generated) return;
+    showToast('Generating PDF…','i');
+    try{
+      const node=certRef.current;
+      const canvas=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:'#ffffff'});
+      const {jsPDF}=window.jspdf;
+      const isLand=(certType.orientation||'landscape')==='landscape';
+      const doc=new jsPDF({orientation:isLand?'landscape':'portrait',unit:'mm',format:'a4'});
+      const pw=doc.internal.pageSize.getWidth(), ph=doc.internal.pageSize.getHeight();
+      doc.addImage(canvas.toDataURL('image/jpeg',.95),'JPEG',0,0,pw,ph);
+      doc.save(`${generated.certId}.pdf`);
+      showToast('PDF saved ✓','s');
+    }catch(e){ showToast('PDF failed: '+e.message,'e'); }
+  };
+
+  const downloadImage=async()=>{
+  if(!generated) return;
+  try{
+    const node=printRef.current.querySelector('.cert-frame')||printRef.current;
+    const canvas=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:null,width:node.offsetWidth,height:node.offsetHeight});
+    canvas.toBlob((blob)=>{
+      if(!blob){ showToast('Download failed: empty image','e'); return; }
+      const url=URL.createObjectURL(blob);
+      const link=document.createElement('a'); link.download=`${generated.certId}.png`; link.href=url; link.click();
+      setTimeout(()=>URL.revokeObjectURL(url),4000);
+    },'image/png');
+  }catch(e){ showToast('Download failed: '+e.message,'e'); }
+};
+
+  const shareWhatsapp=async()=>{
+    if(!generated) return;
+    try{
+      const canvas=await html2canvas(printRef.current,{scale:2,useCORS:true,backgroundColor:'#ffffff'});
+      canvas.toBlob(async(blob)=>{
+        const file=new File([blob],`${generated.certId}.png`,{type:'image/png'});
+        if(navigator.canShare && navigator.canShare({files:[file]})){
+          try{ await navigator.share({files:[file],title:'Certificate',text:`Certificate ${generated.certId}`}); return; }catch(e){}
+        }
+        const link=document.createElement('a'); link.download=`${generated.certId}.png`; link.href=canvas.toDataURL('image/png'); link.click();
+        const msg=encodeURIComponent(`🏆 Certificate generated!\nID: ${generated.certId}\n(Attach the downloaded image in WhatsApp)`);
+        window.open(`https://wa.me/?text=${msg}`,'_blank');
+        showToast('Image downloaded — attach it in the WhatsApp chat that opened','i');
+      },'image/png');
+    }catch(e){ showToast('Share failed: '+e.message,'e'); }
+  };
+
+  return(
+    <div style={{display:'flex',gap:18,flexWrap:'wrap'}}>
+      <div style={{flex:'1 1 380px',minWidth:320}}>
+        <div style={{display:'flex',alignItems:'center',gap:9,marginBottom:4}}>
+          <button className="modal-back" onClick={onBack} title="Back to Types">←</button>
+          <div className="page-title" style={{marginBottom:0}}>Create Certificate</div>
+        </div>
+        <div className="page-sub">Pick a certificate type, fill in the details, then generate. A unique ID and QR code will be added automatically.</div>
+        <span className="f-lbl">Certificate Type</span>
+        <select className="f-select" value={pickedId||''} onChange={e=>setPickedId(e.target.value)}>
+          {certTypes.map(ct=><option key={ct.id} value={ct.id}>{ct.listName} — {ct.name}</option>)}
+        </select>
+        {certType && (
+          <div className="form-grid" style={{marginTop:10}}>
+            {(certType.labels||[]).map(l=>(
+              <div className="form-field" key={l.id}>
+                <label>{l.type==='date'?'📅 ':''}{l.label}</label>
+                <input type={l.type==='date'?'date':'text'} value={values[l.key]||''} onChange={e=>setVal(l.key,e.target.value)} placeholder={l.type==='date'?'':`Enter ${l.label}`}/>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{display:'flex',gap:8,marginTop:6,flexWrap:'wrap'}}>
+          <button className="btn btn-gold" onClick={generate}>🏆 Generate Certificate</button>
+          {generated && <>
+            <button className="btn btn-navy" onClick={doPrint}>🖨 Print (A4)</button>
+            <button className="btn btn-navy" onClick={exportPdf}>📄 Save as PDF</button>
+            <button className="btn btn-ghost" onClick={downloadImage}>🖼 Download PNG</button>
+            <button className="btn btn-wa" onClick={shareWhatsapp}>💬 Share on WhatsApp</button>
+          </>}
+        </div>
+        {generated && <div style={{marginTop:10,fontSize:10.5,color:'var(--tx2)'}}>Unique ID: <span className="hist-id">{generated.certId}</span></div>}
+      </div>
+
+      <div style={{flex:'1 1 420px',minWidth:320}}>
+        <div className="cert-outer">
+          <div ref={certRef}>
+            <CertificateView certType={certType} values={values} certId={generated?.certId||''} scale={0.66} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam}/>
+          </div>
+        </div>
+      </div>
+
+      {generated && (
+        <div id="print-target" ref={printRef}>
+          <CertificateView certType={certType} values={values} certId={generated.certId} scale={1} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam}/>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================ HISTORY TAB ============================ */
+function HistoryTab({certificates,certTypes,fbOk,onRefresh,onView,onDelete}){
+  const [search,setSearch]=useState('');
+  const [flist,setFlist]=useState('');
+  const [fdate,setFdate]=useState('');
+  const filtered=useMemo(()=>{
+    let r=[...certificates];
+    const q=search.toLowerCase();
+    if(q) r=r.filter(c=>c.certId.toLowerCase().includes(q)||Object.values(c.values||{}).some(v=>String(v).toLowerCase().includes(q)));
+    if(flist) r=r.filter(c=>c.listName===flist);
+    if(fdate) r=r.filter(c=>c.createdDate===fdate);
+    r.sort((a,b)=>b.createdAt-a.createdAt);
+    return r;
+  },[certificates,search,flist,fdate]);
+  const lists=[...new Set(certificates.map(c=>c.listName).filter(Boolean))];
+
+  return(
+    <div>
+      <div className="page-title">Certificate History</div>
+      <div className="page-sub">All generated certificates, saved by date. Search, view, re-print, or share any past certificate.</div>
+      <div className="filter-bar">
+        <input placeholder="🔍 Search name, ID…" value={search} onChange={e=>setSearch(e.target.value)}/>
+        <select value={flist} onChange={e=>setFlist(e.target.value)}><option value="">All Categories</option>{lists.map(l=><option key={l} value={l}>{l}</option>)}</select>
+        <input type="date" value={fdate} onChange={e=>setFdate(e.target.value)}/>
+        {(search||flist||fdate)&&<button className="btn btn-ghost btn-sm" onClick={()=>{setSearch('');setFlist('');setFdate('');}}>✕ Clear</button>}
+        <button className="btn btn-navy btn-sm" onClick={onRefresh} disabled={!fbOk} style={{marginLeft:'auto'}}>📥 Reload from Firebase</button>
+      </div>
+      {!filtered.length ? (
+        <div style={{textAlign:'center',padding:'40px 0',color:'var(--tx2)'}}>
+          <div style={{fontSize:40,marginBottom:8}}>📜</div>
+          <div style={{fontFamily:'Cinzel,serif',fontSize:16,fontWeight:700,color:'var(--navy)'}}>No certificates found</div>
+        </div>
+      ) : (
+        <div className="hist-grid">
+          {filtered.map(c=>{
+            const ct=certTypes.find(t=>t.id===c.certTypeId);
+            const primaryVal=Object.values(c.values||{})[0]||'—';
+            return(
+              <div className="hist-card" key={c.certId}>
+                <div className="hist-name">{primaryVal}</div>
+                <div className="hist-meta">{c.listName} · {ct?.name||c.certTypeName||'(type removed)'}<br/>{new Date(c.createdAt).toLocaleString()}</div>
+                <div className="hist-id">{c.certId}</div>
+                <div style={{display:'flex',gap:5,marginTop:9,flexWrap:'wrap'}}>
+                  <button className="btn btn-navy btn-xs" onClick={()=>onView(c)}>👁 View / Print</button>
+                  <button className="btn btn-red btn-xs" onClick={()=>onDelete(c.certId)}>🗑</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================ VIEW / REPRINT MODAL ============================ */
+function ViewCertModal({cert,certTypes,onClose,verifyBaseUrl,verifyParam}){
+ const ct=certTypes.find(t=>t.id===cert.certTypeId)||cert.snapshot;
+  const ref=useRef();
+  const printRef=useRef();
+  const doPrint=()=>window.print();
+  const exportPdf=async()=>{
+    try{
+      const canvas=await html2canvas(printRef.current,{scale:2,useCORS:true,backgroundColor:'#fff'});
+      const {jsPDF}=window.jspdf;
+      const isLand=(ct?.orientation||'landscape')==='landscape';
+      const doc=new jsPDF({orientation:isLand?'landscape':'portrait',unit:'mm',format:'a4'});
+      const pw=doc.internal.pageSize.getWidth(), ph=doc.internal.pageSize.getHeight();
+      doc.addImage(canvas.toDataURL('image/jpeg',.95),'JPEG',0,0,pw,ph);
+      doc.save(`${cert.certId}.pdf`);
+    }catch(e){ showToast('PDF failed: '+e.message,'e'); }
+  };
+  const downloadImage=async()=>{
+  try{
+    const node=printRef.current.querySelector('.cert-frame')||printRef.current;
+    const canvas=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:null,width:node.offsetWidth,height:node.offsetHeight});
+    canvas.toBlob((blob)=>{
+      if(!blob){ showToast('Download failed: empty image','e'); return; }
+      const url=URL.createObjectURL(blob);
+      const link=document.createElement('a'); link.download=`${cert.certId}.png`; link.href=url; link.click();
+      setTimeout(()=>URL.revokeObjectURL(url),4000);
+    },'image/png');
+  }catch(e){ showToast('Download failed: '+e.message,'e'); }
+};
+  const shareWhatsapp=async()=>{
+    try{
+      const canvas=await html2canvas(printRef.current,{scale:2,useCORS:true,backgroundColor:'#fff'});
+      canvas.toBlob(async(blob)=>{
+        const file=new File([blob],`${cert.certId}.png`,{type:'image/png'});
+        if(navigator.canShare&&navigator.canShare({files:[file]})){ try{await navigator.share({files:[file],title:'Certificate'});return;}catch(e){} }
+        const link=document.createElement('a'); link.download=`${cert.certId}.png`; link.href=canvas.toDataURL('image/png'); link.click();
+        window.open(`https://wa.me/?text=${encodeURIComponent('Certificate '+cert.certId)}`,'_blank');
+      },'image/png');
+    }catch(e){ showToast('Share failed','e'); }
+  };
+  if(!ct) return (<div className="modal-bg" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}><h3>⚠ Template Missing</h3><p style={{fontSize:11,color:'var(--tx2)'}}>The certificate type for this record was deleted.</p><button className="btn btn-ghost" onClick={onClose}>Close</button></div></div>);
+  return(
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" style={{maxWidth:760}} onClick={e=>e.stopPropagation()}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+          <h3 style={{marginBottom:0}}>👁 {cert.certId}</h3>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>✕ Close</button>
+        </div>
+        <div className="cert-outer" ref={ref}>
+          <CertificateView certType={ct} values={cert.values} certId={cert.certId} scale={0.6} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam}/>
+        </div>
+        <div style={{display:'flex',gap:8,marginTop:12,flexWrap:'wrap'}}>
+          <button className="btn btn-navy" onClick={doPrint}>🖨 Print</button>
+          <button className="btn btn-navy" onClick={exportPdf}>📄 Save as PDF</button>
+          <button className="btn btn-ghost" onClick={downloadImage}>🖼 Download PNG</button>
+          <button className="btn btn-wa" onClick={shareWhatsapp}>💬 WhatsApp</button>
+        </div>
+        <div id="print-target" ref={printRef}>
+          <CertificateView certType={ct} values={cert.values} certId={cert.certId} scale={1} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam}/>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ VERIFY PAGE (QR scan target — in-app) ============================ */
+function VerifyOverlay({certId,certTypes,schoolName,onClose,fbOk,activeSchool,activeSession}){
+  const [cert,setCert]=useState(undefined); // undefined=loading, null=not found
+  useEffect(()=>{
+    (async()=>{
+      if(!fbOk){ setCert(null); return; }
+      try{
+        let c=null;
+        if(activeSchool&&activeSession&&window.fbGetCertificateById) c=await window.fbGetCertificateById(certId,activeSchool,activeSession);
+        if(!c&&window.fbGetCertificateByIdGlobal) c=await window.fbGetCertificateByIdGlobal(certId);
+        setCert(c||null);
+      }catch(e){ setCert(null); }
+    })();
+  },[certId,fbOk]);
+  const ct = cert ? (certTypes.find(t=>t.id===cert.certTypeId)||cert.snapshot) : null;
+  const now=new Date();
+  const primaryName = cert ? (Object.entries(cert.values||{}).find(([k])=>k.toUpperCase().includes('NAME'))?.[1] || Object.values(cert.values||{})[0] || '') : '';
+  if(cert===undefined) return(<div className="verify-overlay"><button className="verify-close" onClick={onClose}>✕</button><div className="verify-card" style={{padding:40,textAlign:'center'}}><div style={{fontSize:30}}>⏳</div><div style={{fontWeight:700,marginTop:8}}>Verifying…</div></div></div>);
+  if(!cert) return(
+    <div className="verify-overlay">
+      <button className="verify-close" onClick={onClose}>✕</button>
+      <div className="verify-card">
+        <div className="verify-hdr"><div style={{display:'inline-flex',alignItems:'center',gap:7,background:'linear-gradient(135deg,#7f1d1d,#c23b3b)',color:'#fff',padding:'7px 18px',borderRadius:50,fontSize:12,fontWeight:800}}>✗ NOT FOUND</div></div>
+        <div style={{padding:26,textAlign:'center'}}><div style={{fontSize:42}}>❌</div><div style={{fontFamily:'Cinzel,serif',fontSize:17,fontWeight:800,color:'var(--red)',marginTop:8}}>No certificate found for ID</div><div className="hist-id" style={{marginTop:6}}>{certId}</div></div>
+      </div>
+    </div>
+  );
+  return(
+    <div className="verify-overlay">
+      <button className="verify-close" onClick={onClose}>✕</button>
+      <div className="verify-card">
+        <div className="verify-hdr">
+          <div className="verify-badge">✓ VERIFIED CERTIFICATE</div>
+          <div style={{color:'#fff',fontFamily:'Cinzel,serif',fontWeight:700,fontSize:14}}>{cert.listName}</div>
+          <div style={{color:'rgba(255,255,255,.65)',fontSize:10.5,marginTop:4}}>Issued &amp; verified by <strong style={{color:'#fff'}}>{schoolName||'this institution'}</strong></div>
+        </div>
+        <div style={{padding:18}}>
+          {ct && <div className="cert-outer" style={{marginBottom:12}}><CertificateView certType={ct} values={cert.values} certId={cert.certId} scale={0.75} verifyBaseUrl={''}/></div>}
+          <div className="verify-name-banner">
+            <div className="vnb-name">{primaryName || 'Certificate Holder'}</div>
+            <div className="vnb-sub">✅ has a VALID certificate</div>
+          </div>
+          <div className="verify-grid" style={{marginTop:12}}>
+            {Object.entries(cert.values||{}).map(([k,v])=>{
+              const lbl=(ct?.labels||[]).find(l=>l.key===k);
+              const dv = lbl?.type==='date' ? fmtDate(v) : v;
+              return(<div className="verify-field" key={k}><div className="verify-field-lbl">{k.replace(/_/g,' ')}</div><div className="verify-field-val">{dv||'—'}</div></div>);
+            })}
+          </div>
+          <div style={{textAlign:'center',fontSize:9.5,color:'var(--tx3)',marginTop:10}}>Certificate ID: {cert.certId}<br/>Issued: {new Date(cert.createdAt).toLocaleDateString()} · Checked: {now.toLocaleString()}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ SCHOOL STATUS SCREEN (loading state) ============================ */
+function SchoolStatusScreen({status,schoolIdTried}){
+  const copy={
+    resolving:{icon:'⏳',title:'Loading your school…',sub:'Fetching school details, please wait.'},
+    missingId:{icon:'🏫',title:'No School Linked',sub:'This certificate studio link is missing a school reference. Ask your administrator for the correct link.'},
+    notFound:{icon:'❌',title:'No Schools Found',sub:'No school has been set up in the database yet. Please contact your administrator.'},
+    error:{icon:'⚠',title:'Connection Error',sub:'Could not reach the database. Please refresh, or try again shortly.'},
+  }[status]||{icon:'⏳',title:'Loading…',sub:''};
+  return(
+    <div className="setup-overlay">
+      <div className="setup-card">
+        <div className="setup-hdr">
+          <div style={{fontSize:36,marginBottom:8}}>🏆</div>
+          <div style={{fontFamily:"'Cinzel',serif",fontSize:22,fontWeight:900,color:'#fff',letterSpacing:2,textTransform:'uppercase'}}>Certificate Studio</div>
+          <div style={{fontSize:10,color:'rgba(255,255,255,.55)',letterSpacing:1.5,textTransform:'uppercase',marginTop:4}}>Design · Generate · Verify</div>
+        </div>
+        <div className="setup-body">
+          <div style={{fontSize:44,marginBottom:10}}>{copy.icon}</div>
+          <div style={{fontFamily:"'Cinzel',serif",fontSize:17,fontWeight:800,color:'var(--navy)',marginBottom:8}}>{copy.title}</div>
+          <div style={{fontSize:12,color:'var(--tx2)',lineHeight:1.7}}>{copy.sub}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ SCHOOL MANAGER MODAL (select/create school & session) ============================ */
+function SchoolManagerModal({schools,onDone,onSave,fbOk,initialMode='select'}){
+  const [mode,setMode]=useState(initialMode);
+  const [selSchool,setSelSchool]=useState(null);
+  const [selSession,setSelSession]=useState('');
+  const [newSchoolName,setNewSchoolName]=useState('');
+  const [newSchoolLine2,setNewSchoolLine2]=useState('');
+  const [newSchoolLine3,setNewSchoolLine3]=useState('');
+  const [newSchoolLine4,setNewSchoolLine4]=useState('');
+  const [newSessionName,setNewSessionName]=useState('');
+  const [addingSession,setAddingSession]=useState(false);
+  const [loading,setLoading]=useState(false);
+  const school=schools.find(s=>s.id===selSchool);
+  useEffect(()=>{if(school&&school.sessions.length){setSelSession(s=>school.sessions.includes(s)?s:school.sessions[school.sessions.length-1]);}else setSelSession('');},[selSchool]);
+  const createSchool=async()=>{
+    if(!newSchoolName.trim()){showToast('Enter school name','w');return;}
+    setLoading(true);
+    const id='school_'+Date.now();
+    const sess=newSessionName.trim()||new Date().getFullYear()+'-'+(new Date().getFullYear()+1).toString().slice(2);
+    const newSchool={id,name:newSchoolName.trim(),sessions:[sess],line2:newSchoolLine2.trim(),line3:newSchoolLine3.trim(),line4:newSchoolLine4.trim(),adminEmail:window._adminEmail||''};
+    const updated=[...schools,newSchool];
+    await onSave(updated);
+    setSelSchool(id);setSelSession(sess);
+    setNewSchoolName('');setNewSchoolLine2('');setNewSchoolLine3('');setNewSchoolLine4('');setNewSessionName('');
+    setMode('select');setLoading(false);
+    showToast(`School "${newSchool.name}" created ✓`,'s');
+  };
+  const addSession=async()=>{
+    if(!newSessionName.trim()){showToast('Enter session','w');return;}
+    if(!selSchool){showToast('Select a school first','w');return;}
+    setLoading(true);
+    const updated=schools.map(s=>s.id===selSchool?{...s,sessions:[...s.sessions,newSessionName.trim()]}:s);
+    await onSave(updated);
+    setSelSession(newSessionName.trim());setNewSessionName('');setAddingSession(false);setLoading(false);
+    showToast('Session added ✓','s');
+  };
+  const canProceed=selSchool&&selSession;
+  return(
+    <div className="setup-overlay">
+      <div className="setup-card" style={{maxWidth:580}}>
+        <div className="setup-hdr">
+          <div style={{fontSize:36,marginBottom:8}}>🏆</div>
+          <div style={{fontFamily:"'Cinzel',serif",fontSize:22,fontWeight:900,color:'#fff',letterSpacing:2,textTransform:'uppercase'}}>Certificate Studio</div>
+          <div style={{fontSize:10,color:'rgba(255,255,255,.55)',letterSpacing:1.5,textTransform:'uppercase',marginTop:4}}>School & Academic Session Manager</div>
+        </div>
+        <div className="setup-body" style={{textAlign:'left'}}>
+          <div style={{display:'flex',gap:6,marginBottom:16}}>
+            <button onClick={()=>setMode('select')} style={{flex:1,padding:'7px',fontSize:11,fontWeight:700,border:'1.5px solid',borderColor:mode==='select'?'var(--navy)':'var(--bdr)',background:mode==='select'?'var(--navy)':'#fff',color:mode==='select'?'#fff':'var(--tx)',borderRadius:6,cursor:'pointer',fontFamily:'Raleway,sans-serif'}}>🏫 Select Academic Session of School</button>
+            {schools.length===0&&(
+              <button onClick={()=>setMode('create')} style={{flex:1,padding:'7px',fontSize:11,fontWeight:700,border:'1.5px solid',borderColor:mode==='create'?'var(--gold)':'var(--bdr)',background:mode==='create'?'#fffbf0':'#fff',color:mode==='create'?'#92400e':'var(--tx)',borderRadius:6,cursor:'pointer',fontFamily:'Raleway,sans-serif'}}>➕ Create New School</button>
+            )}
+          </div>
+          {mode==='select'&&(<>
+            {schools.length===0?(
+              <div style={{textAlign:'center',padding:'24px 16px',background:'#fafbff',border:'1.5px dashed var(--bdr2)',borderRadius:10,marginBottom:12}}>
+                <div style={{fontSize:38,marginBottom:10}}>🏫</div>
+                <div style={{fontWeight:900,color:'var(--navy)',fontSize:14,marginBottom:6,fontFamily:"'Cinzel',serif",textTransform:'uppercase',letterSpacing:1}}>No Schools Found</div>
+                <div style={{fontSize:11,color:'var(--tx2)',lineHeight:1.7,marginBottom:14}}>You haven't created any school yet.<br/>To get started, click the <strong style={{color:'#92400e'}}>"➕ Create New School"</strong> tab above.</div>
+                <button onClick={()=>setMode('create')} style={{padding:'9px 22px',fontSize:12,fontWeight:700,border:'none',background:'var(--navy)',color:'#fff',borderRadius:7,cursor:'pointer',fontFamily:'Raleway,sans-serif',display:'inline-flex',alignItems:'center',gap:6}}>➕ Create New School Now</button>
+              </div>
+            ):(
+              <>
+                <div style={{fontSize:10,fontWeight:800,color:'var(--navy)',textTransform:'uppercase',letterSpacing:.5,marginBottom:8}}>Select School</div>
+                <div style={{maxHeight:220,overflowY:'auto',marginBottom:12}}>
+                  {schools.map(sch=>(<div key={sch.id} className={`school-list-item${selSchool===sch.id?' active':''}`} onClick={()=>setSelSchool(sch.id)} style={{background:'#fff',border:'1.5px solid var(--bdr)',borderRadius:8,padding:'10px 14px',marginBottom:6,cursor:'pointer',display:'flex',alignItems:'center',gap:10}}><div style={{fontSize:22}}>🏫</div><div style={{flex:1}}><div style={{fontWeight:800,color:'var(--navy)',fontSize:12}}>{sch.name}</div><div style={{fontSize:9,color:'var(--tx2)',marginTop:2}}>{sch.sessions?.length||0} sessions · {sch.line2||''}</div></div>{selSchool===sch.id&&<div style={{color:'var(--gold)',fontSize:18}}>✓</div>}</div>))}
+                </div>
+                {selSchool&&(<>
+                  <div style={{fontSize:10,fontWeight:800,color:'var(--navy)',textTransform:'uppercase',letterSpacing:.5,marginBottom:8}}>📅 Select Academic Session</div>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:4,marginBottom:8}}>
+                    {(school?.sessions||[]).map(ses=>(<span key={ses} className={`session-chip${selSession===ses?' active':''}`} onClick={()=>setSelSession(ses)}>{ses}</span>))}
+                    {!addingSession?(<span className="session-chip" onClick={()=>setAddingSession(true)} style={{background:'#f0fdf4',borderColor:'#bbf7d0',color:'#059669'}}>➕ New Session</span>):(
+                      <div style={{display:'flex',gap:5,alignItems:'center',width:'100%',marginTop:4}}>
+                        <input className="f-input" style={{flex:1,marginBottom:0}} placeholder="e.g. 2025-26" value={newSessionName} onChange={e=>setNewSessionName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addSession()}/>
+                        <button className="btn btn-navy btn-sm" onClick={addSession} disabled={loading}>✓ Add</button>
+                        <button className="btn btn-ghost btn-sm" onClick={()=>{setAddingSession(false);setNewSessionName('');}}>✕</button>
+                      </div>
+                    )}
+                  </div>
+                </>)}
+              </>
+            )}
+          </>)}
+          {mode==='create'&&(
+            <div>
+              <div style={{fontSize:10,fontWeight:800,color:'var(--navy)',textTransform:'uppercase',letterSpacing:.5,marginBottom:8}}>New School Details</div>
+              {[['School Name (Line 1) *',newSchoolName,setNewSchoolName,'e.g. U.M.S. SIMRI WEST',true],['City / Address (Line 2)',newSchoolLine2,setNewSchoolLine2,'e.g. BISFI, MADHUBANI, BIHAR - 847222',false],['UDISE / Code (Line 3)',newSchoolLine3,setNewSchoolLine3,'e.g. UDISE CODE : 10050505003',false],['Founded (Line 4)',newSchoolLine4,setNewSchoolLine4,'e.g. ESTD : 1986',false],['First Academic Session *',newSessionName,setNewSessionName,new Date().getFullYear()+'-'+(new Date().getFullYear()+1).toString().slice(2),false]].map(([lbl,val,setter,ph,req])=>(
+                <div key={lbl} style={{marginBottom:8}}><div style={{fontSize:9,fontWeight:700,color:'var(--tx2)',textTransform:'uppercase',marginBottom:3}}>{lbl}</div><input className="f-input" style={{marginBottom:0}} placeholder={ph} value={val} onChange={e=>setter(e.target.value)} required={req}/></div>
+              ))}
+              <button className="btn btn-navy" style={{width:'100%',fontSize:12,padding:10,marginTop:6}} onClick={createSchool} disabled={loading||!newSchoolName.trim()}>{loading?'Creating…':'🏫 Create School & Continue →'}</button>
+            </div>
+          )}
+          {mode==='select'&&canProceed&&(<>
+            <div style={{background:'linear-gradient(135deg,#ecfdf5,#d1fae5)',border:'1.5px solid #10b981',borderRadius:8,padding:'10px 14px',marginBottom:14,fontSize:10}}>
+              <div style={{fontWeight:800,color:'#065f46',marginBottom:2}}>✓ Ready</div>
+              <div style={{color:'#047857'}}>School: <strong>{school?.name}</strong></div>
+              <div style={{color:'#047857'}}>Session: <strong>{selSession}</strong></div>
+            </div>
+            <button className="btn btn-navy" style={{width:'100%',fontSize:13,padding:10}} onClick={()=>onDone(selSchool,selSession,school)}>🏆 Open Certificate Studio →</button>
+          </>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ APP ROOT ============================ */
+function App(){
+  const [tab,setTab]=useState('types');
+  const [school,setSchool]=useState(null);
+  const [activeSession,setActiveSession]=useState(null);
+  const [schoolStatus,setSchoolStatus]=useState('resolving');
+  const [schools,setSchools]=useState([]);
+  const [schoolsLoaded,setSchoolsLoaded]=useState(false);
+  const [showSetup,setShowSetup]=useState(false);
+  const [certTypes,setCertTypes]=useState([]);
+  const [certificates,setCertificates]=useState([]);
+  const [designId,setDesignId]=useState(null);
+  const [showCreateType,setShowCreateType]=useState(false);
+  const [fbStatus,setFbStatus]=useState('loading');
+  const [viewingCert,setViewingCert]=useState(null);
+  const [verifyCertId,setVerifyCertId]=useState(null);
+
+  const fbOk=fbStatus==='ok';
+  const cdnConfigured = window.CLOUDINARY_CONFIG.cloudName && window.CLOUDINARY_CONFIG.cloudName!=='YOUR_CLOUD_NAME';
+  const samePageVerifyUrl=(typeof window!=='undefined')? (window.location.origin+window.location.pathname) : '';
+  const activeSchool = school?.id || null;
+  const workerConfigured = !!(window.CERT_WORKER_CONFIG && window.CERT_WORKER_CONFIG.url && window.CERT_WORKER_CONFIG.url.trim());
+  const verifyBaseUrl = workerConfigured ? `${window.CERT_WORKER_CONFIG.url.replace(/\/$/,'')}/verify` : samePageVerifyUrl;
+  const verifyParam = workerConfigured ? 'id' : 'verify';
+
+  useEffect(()=>{
+    const params=new URLSearchParams(window.location.search);
+    const v=params.get('verify');
+    if(v) setVerifyCertId(v);
+  },[]);
+
+const handleSetupDone=useCallback((schoolId,session,schoolObj)=>{
+    setSchool(schoolObj);
+    setActiveSession(session);
+    setSchoolStatus('ready');
+    setShowSetup(false);
+  },[]);
+  const saveSchools=useCallback(async(updated)=>{
+    setSchools(updated);
+    if(fbOk&&window.fbSaveOneSchool){
+      for(const s of updated){ try{ await window.fbSaveOneSchool(s); }catch(e){} }
+    }
+  },[fbOk]);
+
+useEffect(()=>{
+    const handler=(e)=>{
+      if(e.data&&e.data.type==='switchTab'){
+        setTab(e.data.tab);
+      }
+    };
+    window.addEventListener('message',handler);
+    return()=>window.removeEventListener('message',handler);
+  },[]);
+
+  // Firebase connection lifecycle
+  useEffect(()=>{
+    const onReady=()=>setFbStatus('ok');
+    const onErr=()=>setFbStatus('error');
+    const onNC=()=>setFbStatus('notConfigured');
+    if(window._fbReady===true) onReady();
+    else{
+      document.addEventListener('fbReady',onReady,{once:true});
+      document.addEventListener('fbNotConfigured',onNC,{once:true});
+      document.addEventListener('fbError',onErr,{once:true});
+      setTimeout(()=>setFbStatus(s=>s==='loading'?'timeout':s),8000);
+    }
+  },[]);
+
+  // Auto-load a school automatically — same behaviour as the ID Card Studio: no
+  // ?school= requirement, no create/select step. Grabs the first school found,
+  // unless ?school=/?schoolId=/CERT_APP_CONFIG.schoolId explicitly names one.
+  useEffect(()=>{
+    const handler=(e)=>{
+      const{email,schools,singleSchoolMode}=e.detail;
+      setSchools(schools||[]);
+      setSchoolsLoaded(true);
+      if(singleSchoolMode && schools && schools.length===1){
+        const sch=schools[0];
+        const ses=(sch.sessions&&sch.sessions.length)?sch.sessions[sch.sessions.length-1]:'';
+        if(ses) handleSetupDone(sch.id,ses,sch);
+      } else {
+        setShowSetup(true);
+      }
+    };
+    document.addEventListener('adminEmailReady',handler);
+    return()=>document.removeEventListener('adminEmailReady',handler);
+  },[]);
+
+  const loadSchoolData=useCallback(async(schoolId,session)=>{
+    if(!schoolId||!session||!fbOk)return;
+    try{ const types=await window.fbLoadCertTypes(schoolId,session); setCertTypes(types||[]); }catch(e){ console.warn(e); }
+    try{ const certs=await window.fbLoadCertificates(schoolId,session); setCertificates(certs||[]); }catch(e){ console.warn(e); }
+  },[fbOk]);
+
+  useEffect(()=>{ if(schoolStatus==='ready'&&activeSchool&&activeSession) loadSchoolData(activeSchool,activeSession); },[schoolStatus,activeSchool,activeSession]);
+
+  const createType=(ct)=>{
+    setCertTypes(p=>[...p,ct]); setShowCreateType(false); setDesignId(ct.id); setTab('designer');
+    if(fbOk&&window.fbSaveCertType) window.fbSaveCertType(ct,activeSchool,activeSession).catch(()=>showToast('Saved locally (Firebase save failed)','w'));
+    showToast('Certificate type created ✓','s');
+  };
+  const updateType=useCallback((updated)=>{
+    setCertTypes(prev=>prev.map(c=>c.id===updated.id?updated:c));
+    if(fbOk&&window.fbSaveCertType) window.fbSaveCertType(updated,activeSchool,activeSession).catch(()=>{});
+  },[fbOk,activeSchool,activeSession]);
+  const saveTypeToCloud=useCallback(async(ct)=>{
+    if(!fbOk||!window.fbSaveCertType){ showToast('Firebase not connected — saved locally only','w'); return; }
+    try{ await window.fbSaveCertType(ct,activeSchool,activeSession); showToast('Template saved to Firebase ☁️','s'); }
+    catch(e){ showToast('Save failed: '+e.message,'e'); }
+  },[fbOk,activeSchool,activeSession]);
+  const deleteType=async(id)=>{
+    if(!confirm('Delete this certificate type? Existing generated certificates keep their data (snapshot) but the template link is removed.')) return;
+    setCertTypes(p=>p.filter(c=>c.id!==id));
+    if(designId===id) setDesignId(null);
+    if(fbOk&&window.fbDeleteCertType) try{ await window.fbDeleteCertType(id,activeSchool,activeSession); }catch(e){}
+    showToast('Certificate type deleted','s');
+  };
+  const onGenerated=async(cert)=>{
+    setCertificates(p=>[cert,...p]);
+    if(fbOk&&window.fbSaveCertificate){
+      try{
+        await window.fbSaveCertificate(cert,activeSchool,activeSession);
+        showToast(`Certificate saved to database ✓ — ${cert.certId}`,'s');
+      }catch(e){
+        showToast('Saved locally only (Firebase failed): '+e.message,'e');
+      }
+    } else {
+      showToast('Firebase not connected — certificate exists only in this browser tab','w');
+    }
+  };
+  const reloadCerts=async()=>{ if(!fbOk)return; try{ const certs=await window.fbLoadCertificates(activeSchool,activeSession); setCertificates(certs||[]); showToast('Reloaded ✓','s'); }catch(e){ showToast('Reload failed','e'); } };
+  const deleteCert=async(certId)=>{
+    if(!confirm('Delete this certificate record?'))return;
+    setCertificates(p=>p.filter(c=>c.certId!==certId));
+    if(fbOk&&window.fbDeleteCertificate) try{ await window.fbDeleteCertificate(certId,activeSchool,activeSession); }catch(e){}
+    showToast('Deleted','s');
+  };
+
+  const activeDesignType=certTypes.find(c=>c.id===designId);
+  const fbLabel={loading:'Connecting…',timeout:'Timeout',notConfigured:'Not Configured',ok:'Connected',error:'Error'}[fbStatus]||fbStatus;
+  const fbDot={loading:'spin',timeout:'err',notConfigured:'err',ok:'ok',error:'err'}[fbStatus];
+  const existingCategories=[...new Set(certTypes.map(c=>c.listName).filter(Boolean))];
+
+  if(showSetup || schoolStatus!=='ready'){
+    if(!schoolsLoaded) return <SchoolStatusScreen status="resolving" schoolIdTried=""/>;
+    return <SchoolManagerModal schools={schools} onDone={handleSetupDone} onSave={saveSchools} fbOk={fbOk} initialMode='select'/>;
+  }
+
+  return(
+    <div className="app">
+      <div className="topbar no-print">
+        {tab!=='types' && <button className="back-btn" title="Back to Types" onClick={()=>setTab('types')}>←</button>}
+        <div className="brand"><div className="brand-badge">🏆</div><div><h1>Certificate Studio</h1><p>Design · Generate · Verify</p></div></div>
+        <div className="tabs">
+          {[['types','🎴','Types'],['designer','🎨','Designer'],['create','✍️','Create'],['history','📜','History']].map(([k,ic,lbl])=>(
+            <button key={k} className={`tab-btn${tab===k?' active':''}`} onClick={()=>setTab(k)}>{ic} {lbl}</button>
+          ))}
+        </div>
+        <div className="top-right">
+          <div className="fb-pill"><div className={`fb-dot ${fbDot}`}/>Firebase: {fbLabel}</div>
+          <div className="fb-pill"><div className={`fb-dot ${cdnConfigured?'ok':'err'}`}/>CDN: {cdnConfigured?'Connected':'Not Configured'}</div>
+          <div className="fb-pill"><div className={`fb-dot ${workerConfigured?'ok':'err'}`}/>Worker: {workerConfigured?'Connected':'Not Configured'}</div>
+        </div>
+      </div>
+
+      <div className="context-bar no-print">
+        <span style={{fontSize:9,color:'rgba(255,255,255,.4)',fontWeight:700}}>🏫</span>
+        <span style={{fontSize:10.5,fontWeight:700}}>{school?.name}</span>
+        <button className="ctx-btn" onClick={()=>setShowSetup(true)}>⚙ Schools</button>
+        {(school?.sessions||[]).length>1 ? (<>
+          <span style={{fontSize:9,color:'rgba(255,255,255,.4)',fontWeight:700,marginLeft:6}}>📅</span>
+          <select className="ctx-sel" value={activeSession||''} onChange={e=>{const ses=e.target.value;setActiveSession(ses);setCertTypes([]);setCertificates([]);loadSchoolData(activeSchool,ses);}}>
+            {(school?.sessions||[]).map(s=><option key={s} value={s}>{s}</option>)}
+          </select>
+        </>) : (
+          <span style={{fontSize:9,color:'rgba(255,255,255,.4)',marginLeft:6}}>📅 {activeSession}</span>
+        )}
+        <div style={{marginLeft:'auto',fontSize:9,color:'rgba(255,255,255,.5)'}}>{certTypes.length} types · {certificates.length} certificates</div>
+      </div>
+
+      <div className="app-body">
+        <div className="main">
+          {tab==='types' && <TypesTab certTypes={certTypes} onOpenCreate={()=>setShowCreateType(true)} onSelectDesign={(id)=>{setDesignId(id);setTab('designer');}} onDelete={deleteType}/>}
+          {tab==='designer' && <DesignerTab certType={activeDesignType} onUpdate={updateType} onSaveCloud={saveTypeToCloud} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} onBack={()=>setTab('types')}/>}
+          {tab==='create' && <CreateTab certTypes={certTypes} onGenerated={onGenerated} fbOk={fbOk} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} onBack={()=>setTab('types')}/>}
+          {tab==='history' && <HistoryTab certificates={certificates} certTypes={certTypes} fbOk={fbOk} onRefresh={reloadCerts} onView={setViewingCert} onDelete={deleteCert}/>}
+        </div>
+      </div>
+
+      {showCreateType && <CreateTypeModal onClose={()=>setShowCreateType(false)} onCreated={createType} fbOk={fbOk} existingCategories={existingCategories}/>}
+      {viewingCert && <ViewCertModal cert={viewingCert} certTypes={certTypes} onClose={()=>setViewingCert(null)} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam}/>}
+      {verifyCertId && <VerifyOverlay certId={verifyCertId} certTypes={certTypes} schoolName={school?.name} onClose={()=>{setVerifyCertId(null);window.history.replaceState({},'',window.location.pathname);}} fbOk={fbOk} activeSchool={activeSchool} activeSession={activeSession}/>}
+
+      <div style={{background:'var(--navy)',color:'rgba(255,255,255,.55)',textAlign:'center',padding:'6px',fontSize:9.5}} className="no-print">
+        Certificate Generator Studio · v2.1 · {school?.name||''} {activeSession?`· ${activeSession}`:''}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+
+<script>
+window._adminEmail='';
+window._singleSchoolMode=false;
+window.addEventListener('message',function(e){
+  if(e.data&&e.data.type==='setAdminEmail'){
+    const newEmail=e.data.email||'';
+    if(window._adminEmail===newEmail&&window._adminEmailReady)return;
+    window._adminEmail=newEmail;
+    window._adminEmailReady=true;
+    window._singleSchoolMode=e.data.singleSchoolMode===true;
+    const tryLoad=()=>{
+      if(window.fbLoadSchools&&window._fbReady){
+        window.fbLoadSchools(window._adminEmail).then(function(schools){
+          if(window.fbSaveOneSchool&&schools&&schools.length){
+            schools.forEach(function(s){
+              if(!s.adminEmail&&window._adminEmail){
+                window.fbSaveOneSchool({...s,adminEmail:window._adminEmail}).catch(()=>{});
+              }
+            });
+          }
+          document.dispatchEvent(new CustomEvent('adminEmailReady',{
+            detail:{email:window._adminEmail,schools:schools||[],singleSchoolMode:window._singleSchoolMode}
+          }));
+        });
+      } else {
+        setTimeout(tryLoad,400);
+      }
+    };
+    tryLoad();
+  }
+});
+</script>
+</body>
+</html>

@@ -610,6 +610,10 @@ input:checked+.tog-sl::before{transform:translateX(15px)}
       </div>
       <div class="section-block">
         <div class="section-block-title">🎴 Studio Services</div>
+        <div class="service-row" style="background:rgba(20,184,166,.08);border:1px solid rgba(20,184,166,.18)">
+          <div class="service-lbl"><span>⚡</span>All Services</div>
+          <label class="tog"><input type="checkbox" id="allSvcToggle" checked onchange="toggleAllServices(this.checked)"><span class="tog-sl"></span></label>
+        </div>
         <div class="service-row">
           <div class="service-lbl"><span>🎓</span>Student ID-Card Studio</div>
           <div style="display:flex;align-items:center;gap:7px">
@@ -622,6 +626,20 @@ input:checked+.tog-sl::before{transform:translateX(15px)}
           <div style="display:flex;align-items:center;gap:7px">
             <span class="service-status" id="teacherSvcStatus">ON</span>
             <label class="tog"><input type="checkbox" id="teacherSvcToggle" checked><span class="tog-sl"></span></label>
+          </div>
+        </div>
+        <div class="service-row">
+          <div class="service-lbl"><span>🆔</span>Student APAAR ID</div>
+          <div style="display:flex;align-items:center;gap:7px">
+            <span class="service-status" id="apaarSvcStatus">ON</span>
+            <label class="tog"><input type="checkbox" id="apaarSvcToggle" checked><span class="tog-sl"></span></label>
+          </div>
+        </div>
+        <div class="service-row">
+          <div class="service-lbl"><span>📜</span>Student Certificate</div>
+          <div style="display:flex;align-items:center;gap:7px">
+            <span class="service-status" id="certSvcStatus">ON</span>
+            <label class="tog"><input type="checkbox" id="certSvcToggle" checked><span class="tog-sl"></span></label>
           </div>
         </div>
       </div>
@@ -768,8 +786,10 @@ firebase.initializeApp(fbCfg);
 // Secondary app for creating viewers without affecting admin session
 let secondaryApp = null;
 try {
+  secondaryApp = firebase.app('secondary'); // reuse if already initialized
+} catch(e) {
   secondaryApp = firebase.initializeApp(fbCfg, 'secondary');
-} catch(e) {}
+}
 
 const auth = firebase.auth();
 const db   = firebase.firestore();
@@ -779,6 +799,8 @@ const secAuth = secondaryApp ? secondaryApp.auth() : null;
    CONSTANTS
 ═══════════════════════════════════════════ */
 const SUPER_ADMIN_EMAIL = 'hrishavranjan2003@gmail.com';
+const EMAIL_UPDATE_WORKER_URL = 'https://school-admin-email-updater.coex.workers.dev';
+const EMAIL_UPDATE_ADMIN_SECRET = 'N7vK2qP9xLm4Rw8ZaT6uFd3HyJ5BcE1QsWp0Mn8VrX2YkL9Gh';
 
 /* ═══════════════════════════════════════════
    STATE
@@ -970,8 +992,12 @@ async function renderDashboard() {
   for (const sch of allSchools) {
     const svcStudent = sch.services?.student !== false;
     const svcTeacher = sch.services?.teacher !== false;
+    const svcApaar   = sch.services?.apaar !== false;
+    const svcCert    = sch.services?.certificate !== false;
     if (svcStudent) activeSvc++;
     if (svcTeacher) activeSvc++;
+    if (svcApaar) activeSvc++;
+    if (svcCert) activeSvc++;
     try {
       const sessions = sch.sessions || [];
       for (const ses of sessions) {
@@ -1081,10 +1107,26 @@ function schoolCard(s) {
           <label class="tog"><input type="checkbox" ${svcT?'checked':''} onchange="toggleService('${esc(s.id)}','teacher',this.checked)"><span class="tog-sl"></span></label>
         </div>
       </div>
+      <div class="service-row">
+        <div class="service-lbl" style="font-size:11px"><span>🆔</span>APAAR ID</div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="service-status ${s.services?.apaar!==false?'on':'off'}" style="font-size:10px">${s.services?.apaar!==false?'● ON':'● OFF'}</span>
+          <label class="tog"><input type="checkbox" ${s.services?.apaar!==false?'checked':''} onchange="toggleService('${esc(s.id)}','apaar',this.checked)"><span class="tog-sl"></span></label>
+        </div>
+      </div>
+      <div class="service-row">
+        <div class="service-lbl" style="font-size:11px"><span>📜</span>Certificate</div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="service-status ${s.services?.certificate!==false?'on':'off'}" style="font-size:10px">${s.services?.certificate!==false?'● ON':'● OFF'}</span>
+          <label class="tog"><input type="checkbox" ${s.services?.certificate!==false?'checked':''} onchange="toggleService('${esc(s.id)}','certificate',this.checked)"><span class="tog-sl"></span></label>
+        </div>
+      </div>
     </div>
     <div class="sc-actions">
       <button class="btn btn-ghost btn-xs" onclick="viewSchoolDetail('${esc(s.id)}')">🔍 Detail</button>
       <button class="btn btn-ghost btn-xs" onclick="editSchool('${esc(s.id)}')">✏️ Edit</button>
+      <button class="btn btn-grn btn-xs" onclick="toggleAllServicesForSchool('${esc(s.id)}', true)">⚡ All ON</button>
+      <button class="btn btn-red btn-xs" onclick="toggleAllServicesForSchool('${esc(s.id)}', false)">🚫 All OFF</button>
       <button class="btn btn-red btn-xs" onclick="deleteSchool('${esc(s.id)}','${esc(s.name)}')">🗑 Delete</button>
     </div>
   </div>`;
@@ -1109,6 +1151,21 @@ async function toggleService(schoolId, service, enabled) {
   }
 }
 
+async function toggleAllServicesForSchool(schoolId, enabled) {
+  const school = allSchools.find(s => s.id === schoolId);
+  if (!school) return;
+  const newServices = { student: enabled, teacher: enabled, apaar: enabled, certificate: enabled };
+  try {
+    await db.collection('schools').doc(schoolId).set({ services: newServices }, { merge: true });
+    school.services = newServices;
+    showToast(`All services ${enabled?'enabled':'suspended'} for ${school.name}`, enabled?'success':'warn');
+    await logAction(enabled?'enable_service':'suspend_service', `${enabled?'Enabled':'Suspended'} ALL services for "${school.name}"`);
+    renderSchools();
+  } catch(e) {
+    showToast('Failed to update services: ' + e.message, 'error');
+  }
+}
+
 /* Add School Form */
 function openAddSchool() {
   document.getElementById('modalSchoolTitle').textContent = '🏫 Add New School';
@@ -1122,6 +1179,8 @@ function openAddSchool() {
   document.getElementById('newSessionInput').value = '';
   document.getElementById('studentSvcToggle').checked = true;
   document.getElementById('teacherSvcToggle').checked = true;
+  document.getElementById('apaarSvcToggle').checked = true;
+  document.getElementById('certSvcToggle').checked = true;
   document.getElementById('schoolAdminPwRow').style.display = '';
   document.getElementById('schoolAdminEmailRow').style.display = '';
   formSessions = [currentYearSession()];
@@ -1167,6 +1226,8 @@ function editSchool(id) {
   document.getElementById('schoolLine4').value = s.line4 || '';
   document.getElementById('studentSvcToggle').checked = s.services?.student !== false;
   document.getElementById('teacherSvcToggle').checked = s.services?.teacher !== false;
+  document.getElementById('apaarSvcToggle').checked = s.services?.apaar !== false;
+  document.getElementById('certSvcToggle').checked = s.services?.certificate !== false;
   // Hide password row in edit mode — can't change auth password here
   document.getElementById('schoolAdminPwRow').style.display = 'none';
   formSessions = [...(s.sessions || [])];
@@ -1202,19 +1263,64 @@ async function saveSchool() {
     adminEmail: editId ? (adminEmail || allSchools.find(s => s.id === editId)?.adminEmail || '') : adminEmail,
     services: {
       student: document.getElementById('studentSvcToggle').checked,
-      teacher: document.getElementById('teacherSvcToggle').checked
+      teacher: document.getElementById('teacherSvcToggle').checked,
+      apaar: document.getElementById('apaarSvcToggle').checked,
+      certificate: document.getElementById('certSvcToggle').checked
     },
     updatedAt: Date.now()
   };
 
   try {
     if (editId) {
-      // EDIT — just update Firestore, no auth changes
-      await db.collection('schools').doc(editId).set(data, { merge: true });
+      const oldSchool = allSchools.find(s => s.id === editId);
+      const oldEmail  = (oldSchool?.adminEmail || '').toLowerCase();
+      const emailChanged = adminEmail && adminEmail !== oldEmail;
+
+      // Recover a missing uid by checking schoolAdmins for a record matching this schoolId
+      let resolvedUid = oldSchool?.uid;
+      if (!resolvedUid) {
+        const adminLookup = await db.collection('schoolAdmins').where('schoolId','==',editId).limit(1).get();
+        if (!adminLookup.empty) resolvedUid = adminLookup.docs[0].id;
+      }
+
+      await db.collection('schools').doc(editId).set({ ...data, uid: resolvedUid || null }, { merge: true });
+
+      if (emailChanged && resolvedUid) {
+        // Update the actual Firebase Auth login email via Cloudflare Worker
+        const resp = await fetch(EMAIL_UPDATE_WORKER_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Admin-Key': EMAIL_UPDATE_ADMIN_SECRET },
+          body: JSON.stringify({ uid: oldSchool.uid, newEmail: adminEmail })
+        });
+        const result = await resp.json();
+        if (!resp.ok) throw new Error(result.error || 'Login email update failed');
+
+        // uid never changes, so schoolAdmins/{uid} doc is just updated in place —
+        // this is what "migrates everything" since students/teachers/templates/viewers
+        // are all keyed by schoolId (editId), not by email, so they stay linked automatically.
+        await db.collection('schoolAdmins').doc(resolvedUid).set({
+          email: adminEmail,
+          schoolId: editId,
+          schoolName: name,
+          previousEmail: oldEmail,
+          updatedAt: Date.now()
+        }, { merge: true });
+
+        // clean up any stale doc that might exist keyed by the old email string
+        try {
+          const stale = await db.collection('schoolAdmins').doc(oldEmail).get();
+          if (stale.exists) await db.collection('schoolAdmins').doc(oldEmail).delete();
+        } catch {}
+
+        showToast(`Login email updated to ${adminEmail} for "${name}" ✓ All data migrated`, 'success');
+        await logAction('edit_school', `Changed admin login email for "${name}": ${oldEmail} → ${adminEmail}`);
+      } else {
+        showToast('School updated ✓', 'success');
+        await logAction('edit_school', `Edited school "${name}"`);
+      }
+
       const idx = allSchools.findIndex(s => s.id === editId);
       if (idx !== -1) allSchools[idx] = { id: editId, ...allSchools[idx], ...data };
-      showToast('School updated ✓', 'success');
-      await logAction('edit_school', `Edited school "${name}"`);
     } else {
       // CREATE — make Firebase Auth account for school admin
       let uid = null;
@@ -1324,6 +1430,8 @@ function viewSchoolDetail(id) {
       <div class="form-label">Studio Services</div>
       <div class="service-row"><div class="service-lbl"><span>🎓</span>Student Studio</div><span class="badge ${s.services?.student!==false?'badge-grn':'badge-red'}">${s.services?.student!==false?'● Active':'● Suspended'}</span></div>
       <div class="service-row"><div class="service-lbl"><span>👩‍🏫</span>Teacher Studio</div><span class="badge ${s.services?.teacher!==false?'badge-grn':'badge-red'}">${s.services?.teacher!==false?'● Active':'● Suspended'}</span></div>
+      <div class="service-row"><div class="service-lbl"><span>🆔</span>Student APAAR ID</div><span class="badge ${s.services?.apaar!==false?'badge-grn':'badge-red'}">${s.services?.apaar!==false?'● Active':'● Suspended'}</span></div>
+      <div class="service-row"><div class="service-lbl"><span>📜</span>Student Certificate</div><span class="badge ${s.services?.certificate!==false?'badge-grn':'badge-red'}">${s.services?.certificate!==false?'● Active':'● Suspended'}</span></div>
     </div>
     <div>
       <div class="form-label">Assigned Viewers (${viewers.length})</div>
@@ -1500,7 +1608,7 @@ async function saveViewer() {
           }
         }
 
-        const docId = 'viewer_' + Date.now();
+        const docId = uid;
         const viewerData = {
           id: docId, uid, email, schoolId,
           allowStudent: allowStu, allowTeacher: allowTch,
@@ -1764,6 +1872,22 @@ document.getElementById('teacherSvcToggle').addEventListener('change', function(
   document.getElementById('teacherSvcStatus').textContent = this.checked ? 'ON' : 'OFF';
   document.getElementById('teacherSvcStatus').className = 'service-status ' + (this.checked ? 'on' : 'off');
 });
+document.getElementById('apaarSvcToggle').addEventListener('change', function() {
+  document.getElementById('apaarSvcStatus').textContent = this.checked ? 'ON' : 'OFF';
+  document.getElementById('apaarSvcStatus').className = 'service-status ' + (this.checked ? 'on' : 'off');
+});
+document.getElementById('certSvcToggle').addEventListener('change', function() {
+  document.getElementById('certSvcStatus').textContent = this.checked ? 'ON' : 'OFF';
+  document.getElementById('certSvcStatus').className = 'service-status ' + (this.checked ? 'on' : 'off');
+});
+
+function toggleAllServices(val) {
+  ['studentSvcToggle','teacherSvcToggle','apaarSvcToggle','certSvcToggle'].forEach(id => {
+    const el = document.getElementById(id);
+    el.checked = val;
+    el.dispatchEvent(new Event('change'));
+  });
+}
 
 /* Make openModal work for buttons that use it directly */
 window.openModal = openModal;

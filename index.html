@@ -342,7 +342,7 @@ body{font-family:'Space Grotesk',sans-serif;background:var(--ink);min-height:100
       <div class="dash-stat"><div class="dsi">🎓</div><div class="dsv" id="statStudents">—</div><div class="dsl">Students</div></div>
       <div class="dash-stat"><div class="dsi">👩‍🏫</div><div class="dsv" id="statTeachers">—</div><div class="dsl">Teachers</div></div>
       <div class="dash-stat"><div class="dsi">🏫</div><div class="dsv" id="statSchools">—</div><div class="dsl">Schools</div></div>
-      <div class="dash-stat"><div class="dsi">🎴</div><div class="dsv">3</div><div class="dsl">Studios</div></div>
+      <div class="dash-stat"><div class="dsi">🎴</div><div class="dsv">4</div><div class="dsl">Studios</div></div>
     </div>
 
     <div class="studios-grid">
@@ -384,13 +384,31 @@ body{font-family:'Space Grotesk',sans-serif;background:var(--ink);min-height:100
         <div class="sc-arrow">→</div>
       </div>
 
-      <!-- Apparel Studio -->
+      <!-- Certificate Studio -->
+      <div class="studio-card student" onclick="openStudio('certificate')">
+        <div style="display:flex;align-items:flex-start;gap:14px">
+          <div class="sc-icon-wrap">📜</div>
+          <div class="sc-info">
+            <div class="sc-title">Student Certificate Maker</div>
+            <div class="sc-desc">Design and print student certificates — merit, participation, achievement — with school branding and QR verification.</div>
+            <div class="sc-tags">
+              <span class="sc-tag">Templates</span>
+              <span class="sc-tag">QR Verify</span>
+              <span class="sc-tag">PDF Export</span>
+            </div>
+          </div>
+        </div>
+        <div class="sc-status live"><div class="sc-status-dot"></div>Live & Active</div>
+        <div class="sc-arrow">→</div>
+      </div>
+
+      <<!-- Student Appar ID -->
       <div class="studio-card apparel" onclick="openStudio('apparel')">
         <div style="display:flex;align-items:flex-start;gap:14px">
           <div class="sc-icon-wrap">👕</div>
           <div class="sc-info">
-            <div class="sc-title">Apparel Studio</div>
-            <div class="sc-desc">Design custom school uniform tags, badges, and apparel labels with school branding and student details.</div>
+            <div class="sc-title">Student Appar ID</div>
+            <div class="sc-desc">Design custom school uniform tags, badges, and Appar ID labels with school branding and student details.</div>
             <div class="sc-tags">
               <span class="sc-tag">Uniform Tags</span>
               <span class="sc-tag">Badges</span>
@@ -398,7 +416,7 @@ body{font-family:'Space Grotesk',sans-serif;background:var(--ink);min-height:100
             </div>
           </div>
         </div>
-        <div class="sc-status soon"><div class="sc-status-dot"></div>Coming Soon</div>
+        <div class="sc-status live"><div class="sc-status-dot"></div>Live & Active</div>
         <div class="sc-arrow">→</div>
       </div>
     </div>
@@ -545,9 +563,9 @@ document.getElementById('welcomeName').textContent = schoolName;
 
   // Check if this user is a viewer
   try{
-    const vSnap=await db.collection('viewers').where('email','==',user.email).get();
-    if(!vSnap.empty){
-      const viewer=vSnap.docs[0].data();
+    const vDoc=await db.collection('viewers').doc(user.uid).get();
+    if(vDoc.exists){
+      const viewer=vDoc.data();
       if(viewer.active===false){
         await auth.signOut();
         showLogin();
@@ -713,40 +731,21 @@ function openStudio(type){
   const wrap=document.getElementById('studioIframeWrap');
   wrap.innerHTML='';
 
-  /* ── Apparel coming soon ── */
-  if(type==='apparel'){
-    document.getElementById('dashboardView').classList.remove('active');
-    document.getElementById('studioPanel').classList.add('active');
-    document.getElementById('studioBreadcrumb').textContent='Apparel Studio';
-    document.getElementById('topbarSubtitle').textContent='Apparel Studio';
-    document.getElementById('studioBadge').textContent='🚧 Coming Soon';
-    document.getElementById('studioBadge').style.background='rgba(245,158,11,.15)';
-    document.getElementById('studioBadge').style.color='#fbbf24';
-    document.getElementById('studioBadge').style.border='1px solid rgba(245,158,11,.25)';
-    wrap.innerHTML=`
-      <div class="coming-soon-panel">
-        <div class="cs-icon">👕</div>
-        <h2>Apparel Studio</h2>
-        <p>Custom uniform tags, badges & labels — coming soon!</p>
-        <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
-          <div style="background:rgba(201,162,39,.1);border:1px solid rgba(201,162,39,.2);border-radius:10px;padding:10px 18px;font-size:11px;color:var(--gold)">🏷️ Uniform Tags</div>
-          <div style="background:rgba(201,162,39,.1);border:1px solid rgba(201,162,39,.2);border-radius:10px;padding:10px 18px;font-size:11px;color:var(--gold)">📛 Name Badges</div>
-          <div style="background:rgba(201,162,39,.1);border:1px solid rgba(201,162,39,.2);border-radius:10px;padding:10px 18px;font-size:11px;color:var(--gold)">🖨️ Print Ready</div>
-        </div>
-      </div>`;
-    return;
-  }
+  
 
   /* ── File & name maps ── */
   const fileMap={
     student:'student-id-card-studio/student-id-card.html',
-    teacher:'teacher-id-card-studio/teacher-id-card.html'
+    teacher:'teacher-id-card-studio/teacher-id-card.html',
+    certificate:'certificate-studio/certificate.html',
+    apparel:'apparel-studio/apparel.html'
 };
   const nameMap={
     student:'Student ID‑Card Studio',
-    teacher:'Teacher ID‑Card Studio'
+    teacher:'Teacher ID‑Card Studio',
+    certificate:'Student Certificate Maker',
+    apparel:'Student Appar ID'
   };
-
   /* ── Switch to studio panel ── */
   document.getElementById('dashboardView').classList.remove('active');
   document.getElementById('studioPanel').classList.add('active');
@@ -821,7 +820,7 @@ function openStudio(type){
     /* ── Studio info pill ── */
     const infoPill=document.createElement('div');
     infoPill.style.cssText='display:flex;flex-direction:column;justify-content:center;padding:0 10px;border-left:1px solid rgba(255,255,255,.12);margin-left:4px;';
-    const icon=type==='student'?'🎓':'👩‍🏫';
+    const icon={student:'🎓',teacher:'👩‍🏫',certificate:'📜',apparel:'👕'}[type]||'📁';
     const sub=type==='student'?'Portrait 5.5×8.5cm · QR Verify · Firebase':'Portrait 5.5×8.5cm · QR Verify · Firebase';
     infoPill.innerHTML=`<div style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:#fff">${icon} ${nameMap[type]}</div><div style="font-size:9px;color:rgba(255,255,255,.35);letter-spacing:.5px">${sub}</div>`;
     bar.appendChild(infoPill);
