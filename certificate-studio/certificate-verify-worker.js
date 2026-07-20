@@ -417,7 +417,6 @@ ${creditFooter()}
 }
 
 function notFoundPage(certId, debug) {
-  const debugHtml = debug ? `<div class="warning" style="background:#f1f5f9;border-color:#cbd5e1;color:#334155;text-align:left;font-family:monospace;font-size:10px;white-space:pre-wrap;">${sanitize(JSON.stringify(debug,null,2))}</div>` : '';
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -451,7 +450,6 @@ p{font-size:13px;color:var(--tx2);line-height:1.6;margin-bottom:6px;}
   <p>No record found for certificate ID:</p>
   <div class="code-box">${sanitize(certId)}</div>
   <div class="warning">⚠️ This certificate ID may be invalid, or the record has been removed.</div>
-  ${debugHtml}
 </div>
 ${creditFooter()}
 </body>
