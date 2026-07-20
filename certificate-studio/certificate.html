@@ -637,40 +637,119 @@ function CreateTypeModal({onClose,onCreated,fbOk,existingCategories}){
   );
 }
 
+/* ============================ IMPORT LABELS MODAL ============================ */
+function ImportLabelsModal({currentType,otherTypes,onClose,onImport}){
+  const [pickedId,setPickedId]=useState(otherTypes[0]?.id||'');
+  const [mode,setMode]=useState('append'); // append | replace
+  const picked=otherTypes.find(t=>t.id===pickedId);
+  const doImport=()=>{
+    if(!picked){ showToast('Select a template to import from','w'); return; }
+    const cloned=(picked.labels||[]).map((l,i)=>({
+      ...l,
+      id:uid('lb'),
+      key: mode==='append' ? slugKey(l.label)+'_imp_'+Date.now()+'_'+i : l.key,
+      style:{...l.style}
+    }));
+    onImport(cloned,mode);
+    showToast(`Imported ${cloned.length} label${cloned.length!==1?'s':''} from "${picked.name}" ✓`,'s');
+  };
+  return(
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <div className="modal-hdr-row"><h3>⇪ Import Labels From Another Template</h3></div>
+        {!otherTypes.length ? (
+          <div style={{fontSize:11,color:'var(--tx2)',padding:'16px 0'}}>No other certificate templates exist yet in this school/session to import from.</div>
+        ) : (<>
+          <span className="f-lbl">Source Template</span>
+          <select className="f-select" value={pickedId} onChange={e=>setPickedId(e.target.value)}>
+            {otherTypes.map(t=><option key={t.id} value={t.id}>{t.listName} — {t.name} ({(t.labels||[]).length} labels)</option>)}
+          </select>
+          {picked && (
+            <div style={{display:'flex',flexWrap:'wrap',gap:5,margin:'8px 0 14px'}}>
+              {(picked.labels||[]).map(l=>(<span key={l.id} className="chip-suggest" style={{cursor:'default'}}>{l.type==='date'?'📅 ':''}{l.label}</span>))}
+            </div>
+          )}
+          <span className="f-lbl">Import Mode</span>
+          <div style={{display:'flex',gap:6,marginBottom:14}}>
+            <button onClick={()=>setMode('append')} style={{flex:1,padding:'7px',fontSize:11,fontWeight:700,border:'1.4px solid',borderColor:mode==='append'?'var(--gold)':'var(--bdr2)',background:mode==='append'?'#fbf1d8':'#fff',color:'var(--navy)',borderRadius:6,cursor:'pointer'}}>➕ Add to Current Labels</button>
+            <button onClick={()=>setMode('replace')} style={{flex:1,padding:'7px',fontSize:11,fontWeight:700,border:'1.4px solid',borderColor:mode==='replace'?'var(--gold)':'var(--bdr2)',background:mode==='replace'?'#fbf1d8':'#fff',color:'var(--navy)',borderRadius:6,cursor:'pointer'}}>♻ Replace All Labels</button>
+          </div>
+          <div style={{fontSize:9.5,color:'var(--tx3)',marginBottom:14,lineHeight:1.5}}>After importing you can rename, restyle, reposition, add, or delete any label as usual in the panel on the right.</div>
+          <div style={{display:'flex',gap:8}}>
+            <button className="btn btn-gold" style={{flex:1}} onClick={doImport}>⇪ Import Labels</button>
+            <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          </div>
+        </>)}
+      </div>
+    </div>
+  );
+}
+
 /* ============================ TYPES TAB ============================ */
-function TypesTab({certTypes,onOpenCreate,onSelectDesign,onDelete}){
+function TypesTab({certTypes,onOpenCreate,onSelectDesign,onDelete,onReplaceImage}){
+  const [collapsed,setCollapsed]=useState({});
+  const toggleCat=(key)=>setCollapsed(p=>({...p,[key]:!p[key]}));
+  const grouped=useMemo(()=>{
+    const g={};
+    certTypes.forEach(ct=>{
+      const key=ct.listName||'Uncategorized';
+      if(!g[key]) g[key]=[];
+      g[key].push(ct);
+    });
+    return Object.entries(g).sort((a,b)=>a[0].localeCompare(b[0]));
+  },[certTypes]);
+
   return(
     <div>
       <div className="page-title">Certificate Types</div>
-      <div className="page-sub">Upload a template once, define its labels, then reuse it to generate certificates. Click a type to design or delete it.</div>
-      <div className="type-grid">
-        <div className="add-type-card" onClick={onOpenCreate}>
-          <div className="aic">➕</div>
-          <div style={{fontWeight:700,fontSize:12}}>Create New Type</div>
-        </div>
-        {certTypes.map(ct=>(
-          <div className="type-card" key={ct.id}>
-            <img className="type-thumb" src={ct.templateImage} alt={ct.name} onClick={()=>onSelectDesign(ct.id)}/>
-            <div className="type-info" onClick={()=>onSelectDesign(ct.id)}>
-              <div className="type-name">{ct.name}</div>
-              <div className="type-meta">{ct.listName} · {(ct.labels||[]).length} labels · {ct.orientation}</div>
-            </div>
-            <div className="type-actions">
-              <button className="btn btn-navy btn-xs" onClick={()=>onSelectDesign(ct.id)}>🎨 Design</button>
-              <button className="btn btn-red btn-xs" onClick={()=>onDelete(ct.id)}>🗑</button>
-            </div>
-          </div>
-        ))}
+      <div className="page-sub">Certificate types are grouped section-wise by category. Each section lists its templates (Template 1, Template 2…). Click a template to design, replace its image, or delete it.</div>
+      <div style={{marginBottom:16}}>
+        <button className="btn btn-gold" onClick={onOpenCreate}>➕ Create New Type</button>
       </div>
       {!certTypes.length && <div style={{textAlign:'center',padding:'30px 0',color:'var(--tx3)',fontSize:11}}>No certificate types yet for this school/session. Click "Create New Type" to get started.</div>}
+      {grouped.map(([catName,types])=>{
+        const isCollapsed=!!collapsed[catName];
+        return(
+          <div className="cat-section" key={catName}>
+            <div className="cat-hdr" style={{cursor:'pointer'}} onClick={()=>toggleCat(catName)}>
+              <span style={{fontSize:14,color:'var(--tx2)'}}>{isCollapsed?'▸':'▾'}</span>
+              <h3 style={{flex:1}}>🏆 {catName}</h3>
+              <span className="cat-count">{types.length} template{types.length!==1?'s':''}</span>
+            </div>
+            {!isCollapsed && (
+              <div className="type-grid">
+                {types.map((ct,i)=>(
+                  <div className="type-card" key={ct.id}>
+                    <img className="type-thumb" src={ct.templateImage} alt={ct.name} onClick={()=>onSelectDesign(ct.id)}/>
+                    <div className="type-info" onClick={()=>onSelectDesign(ct.id)}>
+                      <div className="type-name">Template {i+1} — {ct.name}</div>
+                      <div className="type-meta">{(ct.labels||[]).length} labels · {ct.orientation}</div>
+                    </div>
+                    <div className="type-actions">
+                      <button className="btn btn-navy btn-xs" onClick={()=>onSelectDesign(ct.id)}>🎨 Design</button>
+                      <label className="btn btn-ghost btn-xs" style={{cursor:'pointer',margin:0}}>
+                        🔁 Replace
+                        <input type="file" accept="image/*" style={{display:'none'}} onChange={e=>{ if(e.target.files[0]) onReplaceImage(ct.id,e.target.files[0]); e.target.value=''; }}/>
+                      </label>
+                      <button className="btn btn-red btn-xs" onClick={()=>onDelete(ct.id)}>🗑</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 /* ============================ DESIGNER TAB ============================ */
-function DesignerTab({certType,onUpdate,onSaveCloud,verifyBaseUrl,verifyParam,onBack}){
+function DesignerTab({certType,certTypes,onUpdate,onSaveCloud,onReplaceImage,verifyBaseUrl,verifyParam,onBack}){
   const [selected,setSelected]=useState(null);
   const [zoom,setZoom]=useState(0.62);
+  const [showImport,setShowImport]=useState(false);
+
   if(!certType) return (
     <div>
       <div className="page-sub">Select a certificate type from the "Types" tab first.</div>
@@ -711,7 +790,12 @@ function DesignerTab({certType,onUpdate,onSaveCloud,verifyBaseUrl,verifyParam,on
           <button className="btn btn-ghost btn-xs" onClick={()=>setZoom(z=>Math.max(.3,+(z-.08).toFixed(2)))}>−</button>
           <span style={{fontSize:10,fontWeight:700}}>{Math.round(zoom*100)}%</span>
           <button className="btn btn-ghost btn-xs" onClick={()=>setZoom(z=>Math.min(1,+(z+.08).toFixed(2)))}>+</button>
-          <button className="btn btn-gold btn-sm" style={{marginLeft:'auto'}} onClick={addLabel}>➕ Add Label</button>
+          <button className="btn btn-ghost btn-sm" style={{marginLeft:'auto'}} onClick={()=>setShowImport(true)}>⇪ Import Labels</button>
+          <label className="btn btn-ghost btn-sm" style={{cursor:'pointer',margin:0}}>
+            🔁 Replace Image
+            <input type="file" accept="image/*" style={{display:'none'}} onChange={e=>{ if(e.target.files[0]&&onReplaceImage) onReplaceImage(certType.id,e.target.files[0]); e.target.value=''; }}/>
+          </label>
+          <button className="btn btn-gold btn-sm" onClick={addLabel}>➕ Add Label</button>
           <button className="btn btn-grn btn-sm" onClick={()=>onSaveCloud(certType)}>💾 Save Template</button>
         </div>
         <div className="cert-outer" onClick={()=>setSelected(null)}>
@@ -788,6 +872,7 @@ function DesignerTab({certType,onUpdate,onSaveCloud,verifyBaseUrl,verifyParam,on
           </div>)}
         </div>
       </div>
+      {showImport && <ImportLabelsModal currentType={certType} otherTypes={(certTypes||[]).filter(c=>c.id!==certType.id)} onClose={()=>setShowImport(false)} onImport={(newLabels,mode)=>{ onUpdate({...certType, labels: mode==='replace'?newLabels:[...(certType.labels||[]),...newLabels]}); setShowImport(false); }}/>}
     </div>
   );
 }
@@ -1577,6 +1662,27 @@ useEffect(()=>{
     if(fbOk&&window.fbSaveCertType) window.fbSaveCertType(ct,activeSchool,activeSession).catch(()=>showToast('Saved locally (Firebase save failed)','w'));
     showToast('Certificate type created ✓','s');
   };
+  const replaceTypeImage=useCallback(async(id,file)=>{
+    if(!file||!file.type.match(/image\//)){ showToast('Please choose an image file','e'); return; }
+    const reader=new FileReader();
+    reader.onload=async(e)=>{
+      let img=e.target.result;
+      const cloudReady=window.CLOUDINARY_CONFIG.cloudName&&window.CLOUDINARY_CONFIG.cloudName!=='YOUR_CLOUD_NAME';
+      if(cloudReady){
+        try{ img=await window.uploadToCloudinary(img, window.CLOUDINARY_CONFIG.folder+'/templates'); }
+        catch(err){ showToast('Cloud upload failed, using local image: '+err.message,'w'); }
+      }
+      setCertTypes(prev=>{
+        const updated=prev.map(c=>c.id===id?{...c,templateImage:img}:c);
+        const changed=updated.find(c=>c.id===id);
+        if(fbOk&&window.fbSaveCertType&&changed) window.fbSaveCertType(changed,activeSchool,activeSession).catch(er=>showToast('Auto-save failed: '+er.message,'w'));
+        return updated;
+      });
+      showToast('Template image replaced — labels & positions kept ✓','s');
+    };
+    reader.readAsDataURL(file);
+  },[fbOk,activeSchool,activeSession]);
+
   const updateType=useCallback((updated)=>{
     setCertTypes(prev=>prev.map(c=>c.id===updated.id?updated:c));
     if(fbOk&&window.fbSaveCertType) window.fbSaveCertType(updated,activeSchool,activeSession).catch((e)=>showToast('Auto-save failed: '+e.message,'w'));
@@ -1662,8 +1768,8 @@ useEffect(()=>{
 
       <div className="app-body">
         <div className="main">
-          {tab==='types' && <TypesTab certTypes={certTypes} onOpenCreate={()=>setShowCreateType(true)} onSelectDesign={(id)=>{setDesignId(id);setTab('designer');}} onDelete={deleteType}/>}
-          {tab==='designer' && <DesignerTab certType={activeDesignType} onUpdate={updateType} onSaveCloud={saveTypeToCloud} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} onBack={()=>setTab('types')}/>}
+          {tab==='types' && <TypesTab certTypes={certTypes} onOpenCreate={()=>setShowCreateType(true)} onSelectDesign={(id)=>{setDesignId(id);setTab('designer');}} onDelete={deleteType} onReplaceImage={replaceTypeImage}/>}
+          {tab==='designer' && <DesignerTab certType={activeDesignType} certTypes={certTypes} onUpdate={updateType} onSaveCloud={saveTypeToCloud} onReplaceImage={replaceTypeImage} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} onBack={()=>setTab('types')}/>}
           {tab==='create' && <CreateTab certTypes={certTypes} onGenerated={onGenerated} fbOk={fbOk} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} onBack={()=>setTab('types')}/>}
           {tab==='history' && <HistoryTab certificates={certificates} certTypes={certTypes} fbOk={fbOk} onRefresh={reloadCerts} onView={setViewingCert} onEdit={setEditingCert} onDelete={deleteCert}/>}
         </div>
