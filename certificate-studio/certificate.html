@@ -638,10 +638,24 @@ function CreateTypeModal({onClose,onCreated,fbOk,existingCategories}){
 }
 
 /* ============================ IMPORT LABELS MODAL ============================ */
-function ImportLabelsModal({currentType,otherTypes,onClose,onImport}){
+function ImportLabelsModal({currentType,otherTypes,allTypes,onClose,onImport}){
   const [pickedId,setPickedId]=useState(otherTypes[0]?.id||'');
   const [mode,setMode]=useState('append'); // append | replace
   const picked=otherTypes.find(t=>t.id===pickedId);
+
+  // Template numbers mirror the "Template 1 / Template 2…" numbering shown in the Types tab —
+  // computed per category (listName) across ALL templates, not just the ones importable here.
+  const templateNoOf=(t)=>{
+    const src=allTypes||otherTypes;
+    const sameCat=src.filter(x=>(x.listName||'Uncategorized')===(t.listName||'Uncategorized'));
+    const idx=sameCat.findIndex(x=>x.id===t.id);
+    return idx>=0?idx+1:1;
+  };
+
+  useEffect(()=>{
+    if(picked) showToast(`Previewing Template ${templateNoOf(picked)} — ${picked.name} (${picked.listName})`,'i');
+  },[pickedId]);
+
   const doImport=()=>{
     if(!picked){ showToast('Select a template to import from','w'); return; }
     const cloned=(picked.labels||[]).map((l,i)=>({
@@ -662,7 +676,7 @@ function ImportLabelsModal({currentType,otherTypes,onClose,onImport}){
         ) : (<>
           <span className="f-lbl">Source Template</span>
           <select className="f-select" value={pickedId} onChange={e=>setPickedId(e.target.value)}>
-            {otherTypes.map(t=><option key={t.id} value={t.id}>{t.listName} — {t.name} ({(t.labels||[]).length} labels)</option>)}
+            {otherTypes.map(t=><option key={t.id} value={t.id}>{t.listName} — Template {templateNoOf(t)} ({t.name}) · {(t.labels||[]).length} labels</option>)}
           </select>
           {picked && (
             <div style={{display:'flex',flexWrap:'wrap',gap:5,margin:'8px 0 14px'}}>
@@ -872,14 +886,24 @@ function DesignerTab({certType,certTypes,onUpdate,onSaveCloud,onReplaceImage,ver
           </div>)}
         </div>
       </div>
-      {showImport && <ImportLabelsModal currentType={certType} otherTypes={(certTypes||[]).filter(c=>c.id!==certType.id)} onClose={()=>setShowImport(false)} onImport={(newLabels,mode)=>{ onUpdate({...certType, labels: mode==='replace'?newLabels:[...(certType.labels||[]),...newLabels]}); setShowImport(false); }}/>}
+      {showImport && <ImportLabelsModal currentType={certType} otherTypes={(certTypes||[]).filter(c=>c.id!==certType.id)} allTypes={certTypes||[]} onClose={()=>setShowImport(false)} onImport={(newLabels,mode)=>{ onUpdate({...certType, labels: mode==='replace'?newLabels:[...(certType.labels||[]),...newLabels]}); setShowImport(false); }}/>}
     </div>
   );
 }
 
 /* ============================ CREATE CERTIFICATE TAB ============================ */
 function CreateTab({certTypes,onGenerated,fbOk,verifyBaseUrl,verifyParam,onBack}){
-  const [pickedId,setPickedId]=useState(certTypes[0]?.id||null);
+  const categories=useMemo(()=>[...new Set(certTypes.map(ct=>ct.listName||'Uncategorized'))],[certTypes]);
+  const [pickedCategory,setPickedCategory]=useState(categories[0]||'');
+  useEffect(()=>{ if(categories.length && !categories.includes(pickedCategory)) setPickedCategory(categories[0]); },[categories]);
+
+  const typesInCat=useMemo(()=>certTypes.filter(ct=>(ct.listName||'Uncategorized')===pickedCategory),[certTypes,pickedCategory]);
+
+  const [pickedId,setPickedId]=useState(typesInCat[0]?.id||null);
+  useEffect(()=>{
+    if(!typesInCat.find(t=>t.id===pickedId)) setPickedId(typesInCat[0]?.id||null);
+  },[typesInCat]);
+
   const [values,setValues]=useState({});
   const [generated,setGenerated]=useState(null);
   const [overrides,setOverrides]=useState({});
@@ -1026,10 +1050,26 @@ function CreateTab({certTypes,onGenerated,fbOk,verifyBaseUrl,verifyParam,onBack}
           <div className="page-title" style={{marginBottom:0}}>Create Certificate</div>
         </div>
         <div className="page-sub">Pick a certificate type, fill in the details, then generate. A unique ID and QR code will be added automatically.</div>
-        <span className="f-lbl">Certificate Type</span>
-        <select className="f-select" value={pickedId||''} onChange={e=>setPickedId(e.target.value)}>
-          {certTypes.map(ct=><option key={ct.id} value={ct.id}>{ct.listName} — {ct.name}</option>)}
+        <span className="f-lbl">1. Choose Category</span>
+        <select className="f-select" value={pickedCategory} onChange={e=>setPickedCategory(e.target.value)}>
+          {categories.map(cat=><option key={cat} value={cat}>{cat} ({certTypes.filter(c=>(c.listName||'Uncategorized')===cat).length})</option>)}
         </select>
+
+        <span className="f-lbl">2. Choose Template</span>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(120px,1fr))',gap:8,marginBottom:14}}>
+          {typesInCat.map((ct,i)=>(
+            <div key={ct.id} onClick={()=>setPickedId(ct.id)}
+              style={{border:'2px solid',borderColor:pickedId===ct.id?'var(--gold)':'var(--bdr)',borderRadius:9,overflow:'hidden',cursor:'pointer',background:'#fff',boxShadow:pickedId===ct.id?'0 4px 16px rgba(184,145,47,.3)':'0 1px 4px rgba(0,0,0,.06)',transition:'all .15s',position:'relative'}}>
+              {pickedId===ct.id && <div style={{position:'absolute',top:4,right:4,background:'var(--gold)',color:'#fff',borderRadius:'50%',width:18,height:18,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:800,zIndex:2}}>✓</div>}
+              <img src={ct.templateImage} alt={ct.name} style={{width:'100%',height:74,objectFit:'cover',display:'block',background:'#ece3d0'}}/>
+              <div style={{padding:'5px 7px'}}>
+                <div style={{fontSize:10,fontWeight:800,color:'var(--navy)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>Template {i+1}</div>
+                <div style={{fontSize:8.5,color:'var(--tx3)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{ct.name}</div>
+              </div>
+            </div>
+          ))}
+          {!typesInCat.length && <div style={{fontSize:10.5,color:'var(--tx3)',padding:'10px 0'}}>No templates in this category.</div>}
+        </div>
         {certType && (
           <div className="form-grid" style={{marginTop:10}}>
             {(certType.labels||[]).map(l=>(
