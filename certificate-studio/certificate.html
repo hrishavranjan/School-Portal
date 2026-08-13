@@ -13,6 +13,8 @@
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 /* ============ CLOUDINARY (optional image hosting) ============ */
 window.CLOUDINARY_CONFIG = { cloudName:'dbqqvmkss', uploadPreset:'Student Cerificate', folder:'school-id-cards/teachers' };
@@ -699,6 +701,150 @@ function ImportLabelsModal({currentType,otherTypes,allTypes,onClose,onImport}){
   );
 }
 
+/* ============================ BULK GENERATE MODAL (Excel) ============================ */
+function BulkGenerateModal({certType,verifyBaseUrl,verifyParam,onGenerated,onClose}){
+  const [rows,setRows]=useState(null);
+  const [processing,setProcessing]=useState(false);
+  const [progress,setProgress]=useState({done:0,total:0});
+  const [currentPreview,setCurrentPreview]=useState(null);
+  const hiddenRef=useRef();
+  const labels=certType?.labels||[];
+
+  const downloadSample=()=>{
+    if(!window.XLSX){ showToast('Excel engine still loading — try again in a moment','w'); return; }
+    const headers=labels.map(l=>l.label);
+    const sampleRow={};
+    labels.forEach(l=>{ sampleRow[l.label] = l.type==='date' ? '15-01-2026' : ''; });
+    const ws=XLSX.utils.json_to_sheet([sampleRow],{header:headers});
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'Certificates');
+    XLSX.writeFile(wb,`${(certType.name||'certificate').replace(/[^\w-]+/g,'_')}_sample.xlsx`);
+    const hasDate=labels.some(l=>l.type==='date');
+    showToast(hasDate?'Sample downloaded ✓ — dates use DD-MM-YYYY (e.g. 15-01-2026)':'Sample Excel downloaded ✓','s');
+  };
+
+  const handleFile=(f)=>{
+    if(!f) return;
+    if(!window.XLSX){ showToast('Excel engine still loading — try again','w'); return; }
+    const reader=new FileReader();
+    reader.onload=(e)=>{
+      try{
+        const wb=XLSX.read(e.target.result,{type:'array'});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        const json=XLSX.utils.sheet_to_json(ws,{defval:''});
+        if(!json.length){ showToast('That Excel sheet has no rows','w'); return; }
+        const headerSet=Object.keys(json[0]);
+        const missing=labels.filter(l=>!headerSet.includes(l.label));
+        if(missing.length){ showToast(`Excel is missing column(s): ${missing.map(m=>m.label).join(', ')}`,'e'); return; }
+        setRows(json);
+        showToast(`Loaded ${json.length} row(s) from Excel ✓`,'s');
+      }catch(err){ showToast('Could not read that Excel file: '+err.message,'e'); }
+    };
+    reader.readAsArrayBuffer(f);
+  };
+
+  const processRows=async()=>{
+    if(!rows||!rows.length){ showToast('Upload a filled Excel file first','w'); return; }
+    setProcessing(true); setProgress({done:0,total:rows.length});
+    let ok=0, bad=0;
+
+    for(let i=0;i<rows.length;i++){
+      const row=rows[i]; const values={}; let rowMissing=false;
+      labels.forEach(l=>{
+        let v=String(row[l.label]??'').trim();
+        if(l.type==='date' && v){
+          if(!isNaN(v) && window.XLSX?.SSF){
+            const d=XLSX.SSF.parse_date_code(Number(v));
+            if(d) v=`${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+          } else {
+            const m=v.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
+            if(m) v=`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+          }
+        }
+        if(!v) rowMissing=true;
+        values[l.key]=v;
+      });
+
+      if(rowMissing){ bad++; showToast(`Row ${i+2}: missing a value, skipped`,'w'); setProgress({done:i+1,total:rows.length}); continue; }
+
+      const certId=genCertId();
+      setCurrentPreview({values,certId});
+      await new Promise(r=>setTimeout(r,60));
+
+      let node=null;
+      for(let t=0;t<20;t++){ node=hiddenRef.current?.querySelector('.cert-frame'); if(node) break; await new Promise(r=>setTimeout(r,50)); }
+
+      let certImageUrl=null;
+      if(node){
+        try{
+          await waitForImagesLoaded(node);
+          const canvas=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:'#ffffff'});
+          const dataUrl=canvas.toDataURL('image/png');
+          const cloudReady=window.CLOUDINARY_CONFIG.cloudName && window.CLOUDINARY_CONFIG.cloudName!=='YOUR_CLOUD_NAME';
+          if(cloudReady){ try{ certImageUrl=await window.uploadToCloudinary(dataUrl, window.CLOUDINARY_CONFIG.folder+'/certificates'); }catch(e){} }
+        }catch(e){}
+      }
+
+      const cert={
+        certId, certTypeId:certType.id, certTypeName:certType.name, listName:certType.listName,
+        values, createdAt:Date.now(), createdDate:new Date().toISOString().slice(0,10),
+        snapshot:{templateImage:certType.templateImage, labels:certType.labels, qr:certType.qr, idText:certType.idText, orientation:certType.orientation},
+        certImageUrl
+      };
+
+      try{ await onGenerated(cert); ok++; }
+      catch(e){ bad++; showToast(`Row ${i+2}: save failed — ${e.message}`,'e'); }
+
+      setProgress({done:i+1,total:rows.length});
+    }
+
+    setCurrentPreview(null); setProcessing(false);
+    showToast(`Bulk generation done: ${ok} created${bad?`, ${bad} skipped/failed`:''} ✓`,'s');
+  };
+
+  return(
+    <div className="modal-bg" onClick={processing?undefined:onClose}>
+      <div className="modal" style={{maxWidth:560}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-hdr-row"><h3>📊 Bulk Generate Certificates</h3></div>
+        {!certType ? (
+          <div style={{fontSize:11,color:'var(--tx2)'}}>Select a certificate template first.</div>
+        ) : (<>
+          <div style={{fontSize:11,color:'var(--tx2)',marginBottom:12,lineHeight:1.6}}>
+            Download the sample Excel for <strong>{certType.name}</strong>, fill one row per certificate, then upload it here.
+            Columns must match: <strong>{labels.map(l=>l.label).join(', ')}</strong>.
+            {labels.some(l=>l.type==='date') && <><br/>Write dates as <strong>DD-MM-YYYY</strong> (e.g. 15-01-2026) — the sample sheet already shows this.</>}
+          </div>
+          <div style={{display:'flex',gap:8,marginBottom:14}}>
+            <button className="btn btn-navy" onClick={downloadSample} disabled={processing}>⬇ Download Sample Excel</button>
+            <label className="btn btn-ghost" style={{cursor:'pointer',margin:0}}>
+              ⬆ Upload Filled Excel
+              <input type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={e=>{handleFile(e.target.files[0]); e.target.value='';}} disabled={processing}/>
+            </label>
+          </div>
+          {rows && <div style={{fontSize:11,color:'var(--navy)',fontWeight:700,marginBottom:12}}>{rows.length} row(s) ready.</div>}
+          {processing && (
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:11,fontWeight:700,color:'var(--navy)',marginBottom:5}}>Processing {progress.done} / {progress.total}…</div>
+              <div style={{height:8,background:'#f4efe4',borderRadius:5,overflow:'hidden'}}>
+                <div style={{height:'100%',background:'var(--gold)',width:`${(progress.done/Math.max(1,progress.total))*100}%`,transition:'width .2s'}}/>
+              </div>
+            </div>
+          )}
+          <div style={{display:'flex',gap:8}}>
+            <button className="btn btn-gold" onClick={processRows} disabled={processing||!rows}>{processing?'Generating…':'🏆 Generate All'}</button>
+            <button className="btn btn-ghost" onClick={onClose} disabled={processing}>Close</button>
+          </div>
+        </>)}
+        {currentPreview && (
+          <div style={{position:'absolute',left:-99999,top:0,pointerEvents:'none'}} ref={hiddenRef}>
+            <CertificateView certType={certType} values={currentPreview.values} certId={currentPreview.certId} scale={1} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam}/>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ============================ TYPES TAB ============================ */
 function TypesTab({certTypes,onOpenCreate,onSelectDesign,onDelete,onReplaceImage}){
   const [collapsed,setCollapsed]=useState({});
@@ -908,6 +1054,7 @@ function CreateTab({certTypes,onGenerated,fbOk,verifyBaseUrl,verifyParam,onBack}
   const [generated,setGenerated]=useState(null);
   const [overrides,setOverrides]=useState({});
   const [selected,setSelected]=useState(null);
+  const [showBulk,setShowBulk]=useState(false);
   const certType=certTypes.find(c=>c.id===pickedId);
   const certRef=useRef();
   const printRef=useRef();
@@ -1082,6 +1229,7 @@ function CreateTab({certTypes,onGenerated,fbOk,verifyBaseUrl,verifyParam,onBack}
         )}
         <div style={{display:'flex',gap:8,marginTop:6,flexWrap:'wrap'}}>
           <button className="btn btn-gold" onClick={generate}>🏆 Generate Certificate</button>
+          <button className="btn btn-navy" onClick={()=>setShowBulk(true)} disabled={!certType}>📊 Bulk Generate (Excel)</button>
           {generated && <>
             <button className="btn btn-navy" onClick={doPrint}>🖨 Print (A4)</button>
             <button className="btn btn-navy" onClick={exportPdf}>📄 Save as PDF</button>
@@ -1155,25 +1303,35 @@ function CreateTab({certTypes,onGenerated,fbOk,verifyBaseUrl,verifyParam,onBack}
           <CertificateView certType={mergedCertType} values={values} certId={generated.certId} scale={1} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam}/>
         </div>
       )}
+      {showBulk && <BulkGenerateModal certType={certType} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} onGenerated={onGenerated} onClose={()=>setShowBulk(false)}/>}
     </div>
   );
 }
 
 /* ============================ HISTORY TAB ============================ */
-function HistoryTab({certificates,certTypes,fbOk,onRefresh,onView,onEdit,onDelete}){
+/* ============================ HISTORY TAB ============================ */
+function HistoryTab({certificates,certTypes,fbOk,onRefresh,onView,onEdit,onDelete,verifyBaseUrl,verifyParam}){
   const [search,setSearch]=useState('');
   const [flist,setFlist]=useState('');
-  const [fdate,setFdate]=useState('');
+  const [fdateFrom,setFdateFrom]=useState('');
+  const [fdateTo,setFdateTo]=useState('');
   const [collapsed,setCollapsed]=useState({});
+  const [selectedIds,setSelectedIds]=useState(new Set());
+  const [bulkBusy,setBulkBusy]=useState(false);
+  const [bulkPreview,setBulkPreview]=useState(null);
+  const [singleBusyId,setSingleBusyId]=useState(null);
+  const hiddenRef=useRef();
+
   const filtered=useMemo(()=>{
     let r=[...certificates];
     const q=search.toLowerCase();
     if(q) r=r.filter(c=>c.certId.toLowerCase().includes(q)||Object.values(c.values||{}).some(v=>String(v).toLowerCase().includes(q)));
     if(flist) r=r.filter(c=>c.listName===flist);
-    if(fdate) r=r.filter(c=>c.createdDate===fdate);
+    if(fdateFrom) r=r.filter(c=>c.createdDate>=fdateFrom);
+    if(fdateTo) r=r.filter(c=>c.createdDate<=fdateTo);
     r.sort((a,b)=>b.createdAt-a.createdAt);
     return r;
-  },[certificates,search,flist,fdate]);
+  },[certificates,search,flist,fdateFrom,fdateTo]);
   const lists=[...new Set(certificates.map(c=>c.listName).filter(Boolean))];
 
   const grouped=useMemo(()=>{
@@ -1195,17 +1353,142 @@ function HistoryTab({certificates,certTypes,fbOk,onRefresh,onView,onEdit,onDelet
     return labels.slice(0,3).map(l=>[l.label, l.type==='date'?fmtDate(c.values?.[l.key]):(c.values?.[l.key]||'—')]);
   };
 
+  const toggleSelect=(certId)=>setSelectedIds(prev=>{
+    const n=new Set(prev);
+    if(n.has(certId)) n.delete(certId); else n.add(certId);
+    return n;
+  });
+  const selectAllInList=(certsInList,checked)=>setSelectedIds(prev=>{
+    const n=new Set(prev);
+    certsInList.forEach(c=>{ if(checked) n.add(c.certId); else n.delete(c.certId); });
+    return n;
+  });
+  const clearSelection=()=>setSelectedIds(new Set());
+
+  const captureCertCanvas=async(cert)=>{
+    const ct=cert.snapshot||certTypes.find(t=>t.id===cert.certTypeId);
+    if(!ct) return null;
+    setBulkPreview({cert,ct});
+    await new Promise(r=>setTimeout(r,60));
+    let node=null;
+    for(let i=0;i<20;i++){ node=hiddenRef.current?.querySelector('.cert-frame'); if(node) break; await new Promise(r=>setTimeout(r,50)); }
+    if(!node) return null;
+    try{
+      await waitForImagesLoaded(node);
+      const canvas=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:'#ffffff'});
+      return {canvas,ct};
+    }catch(e){ return null; }
+  };
+
+  const downloadSingleImage=async(cert)=>{
+    setSingleBusyId(cert.certId);
+    showToast(`Rendering ${cert.certId}…`,'i');
+    const result=await captureCertCanvas(cert);
+    setBulkPreview(null); setSingleBusyId(null);
+    if(!result){ showToast('Could not render this certificate','e'); return; }
+    result.canvas.toBlob((blob)=>{
+      if(!blob){ showToast('Download failed: empty image','e'); return; }
+      const url=URL.createObjectURL(blob);
+      const link=document.createElement('a'); link.download=`${cert.certId}.png`; link.href=url; link.click();
+      setTimeout(()=>URL.revokeObjectURL(url),4000);
+      showToast('Image downloaded ✓','s');
+    },'image/png');
+  };
+
+  const downloadSinglePdf=async(cert)=>{
+    if(!window.jspdf){ showToast('PDF engine still loading — try again','w'); return; }
+    setSingleBusyId(cert.certId);
+    showToast(`Rendering ${cert.certId}…`,'i');
+    const result=await captureCertCanvas(cert);
+    setBulkPreview(null); setSingleBusyId(null);
+    if(!result){ showToast('Could not render this certificate','e'); return; }
+    try{
+      const {jsPDF}=window.jspdf;
+      const isLand=(result.ct.orientation||'landscape')==='landscape';
+      const doc=new jsPDF({orientation:isLand?'landscape':'portrait',unit:'mm',format:'a4'});
+      const pw=doc.internal.pageSize.getWidth(), ph=doc.internal.pageSize.getHeight();
+      doc.addImage(result.canvas.toDataURL('image/jpeg',.95),'JPEG',0,0,pw,ph);
+      doc.save(`${cert.certId}.pdf`);
+      showToast('PDF saved ✓','s');
+    }catch(e){ showToast('PDF failed: '+e.message,'e'); }
+  };
+
+  const downloadSelectedImages=async()=>{
+    if(!selectedIds.size){ showToast('Select at least one certificate first','w'); return; }
+    if(!window.JSZip){ showToast('Zip engine still loading — try again in a moment','w'); return; }
+    setBulkBusy(true);
+    showToast(`Preparing ${selectedIds.size} image(s)…`,'i');
+    const zip=new JSZip();
+    const selectedCerts=certificates.filter(c=>selectedIds.has(c.certId));
+    let done=0;
+    for(const cert of selectedCerts){
+      const result=await captureCertCanvas(cert);
+      if(result){
+        const dataUrl=result.canvas.toDataURL('image/png');
+        zip.file(`${cert.certId}.png`, dataUrl.split(',')[1], {base64:true});
+        done++;
+      }
+    }
+    setBulkPreview(null);
+    if(!done){ setBulkBusy(false); showToast('Could not render any selected certificates','e'); return; }
+    try{
+      const blob=await zip.generateAsync({type:'blob'});
+      const url=URL.createObjectURL(blob);
+      const link=document.createElement('a'); link.download=`certificates_${Date.now()}.zip`; link.href=url; link.click();
+      setTimeout(()=>URL.revokeObjectURL(url),4000);
+      showToast(`Downloaded ${done} image(s) as ZIP ✓`,'s');
+    }catch(e){ showToast('Zip failed: '+e.message,'e'); }
+    setBulkBusy(false);
+  };
+
+  const downloadSelectedPdf=async()=>{
+    if(!selectedIds.size){ showToast('Select at least one certificate first','w'); return; }
+    if(!window.jspdf){ showToast('PDF engine still loading — try again in a moment','w'); return; }
+    setBulkBusy(true);
+    showToast(`Preparing PDF for ${selectedIds.size} certificate(s)…`,'i');
+    const {jsPDF}=window.jspdf;
+    let doc=null;
+    const selectedCerts=certificates.filter(c=>selectedIds.has(c.certId));
+    let done=0;
+    for(const cert of selectedCerts){
+      const result=await captureCertCanvas(cert);
+      if(!result) continue;
+      const isLand=(result.ct.orientation||'landscape')==='landscape';
+      if(!doc) doc=new jsPDF({orientation:isLand?'landscape':'portrait',unit:'mm',format:'a4'});
+      else doc.addPage('a4', isLand?'landscape':'portrait');
+      const pw=doc.internal.pageSize.getWidth(), ph=doc.internal.pageSize.getHeight();
+      doc.addImage(result.canvas.toDataURL('image/jpeg',.95),'JPEG',0,0,pw,ph);
+      done++;
+    }
+    setBulkPreview(null);
+    if(!doc||!done){ setBulkBusy(false); showToast('Could not render any selected certificates','e'); return; }
+    doc.save(`certificates_${Date.now()}.pdf`);
+    showToast(`Downloaded PDF with ${done} certificate(s) ✓`,'s');
+    setBulkBusy(false);
+  };
+
   return(
     <div>
       <div className="page-title">Certificate History</div>
-      <div className="page-sub">Certificates grouped by type. Search, view, edit, re-print, or share any past certificate.</div>
+      <div className="page-sub">Certificates grouped by type. Search, filter by date range, view, edit, or bulk-download as images/PDF.</div>
       <div className="filter-bar">
         <input placeholder="🔍 Search name, ID…" value={search} onChange={e=>setSearch(e.target.value)}/>
         <select value={flist} onChange={e=>setFlist(e.target.value)}><option value="">All Categories</option>{lists.map(l=><option key={l} value={l}>{l}</option>)}</select>
-        <input type="date" value={fdate} onChange={e=>setFdate(e.target.value)}/>
-        {(search||flist||fdate)&&<button className="btn btn-ghost btn-sm" onClick={()=>{setSearch('');setFlist('');setFdate('');}}>✕ Clear</button>}
+        <input type="date" value={fdateFrom} onChange={e=>setFdateFrom(e.target.value)} title="From date"/>
+        <input type="date" value={fdateTo} onChange={e=>setFdateTo(e.target.value)} title="To date"/>
+        {(search||flist||fdateFrom||fdateTo)&&<button className="btn btn-ghost btn-sm" onClick={()=>{setSearch('');setFlist('');setFdateFrom('');setFdateTo('');}}>✕ Clear</button>}
         <button className="btn btn-navy btn-sm" onClick={onRefresh} disabled={!fbOk} style={{marginLeft:'auto'}}>📥 Reload from Firebase</button>
       </div>
+
+      {selectedIds.size>0 && (
+        <div style={{display:'flex',alignItems:'center',gap:8,background:'#fbf1d8',border:'1.5px solid var(--gold)',borderRadius:8,padding:'8px 12px',marginBottom:14,flexWrap:'wrap'}}>
+          <span style={{fontSize:11,fontWeight:800,color:'var(--navy)'}}>{selectedIds.size} selected</span>
+          <button className="btn btn-navy btn-sm" onClick={downloadSelectedImages} disabled={bulkBusy}>{bulkBusy?'Working…':'🖼 Download Images (ZIP)'}</button>
+          <button className="btn btn-navy btn-sm" onClick={downloadSelectedPdf} disabled={bulkBusy}>{bulkBusy?'Working…':'📄 Download PDF (Combined)'}</button>
+          <button className="btn btn-ghost btn-sm" onClick={clearSelection} disabled={bulkBusy}>✕ Clear Selection</button>
+        </div>
+      )}
+
       {!filtered.length ? (
         <div style={{textAlign:'center',padding:'40px 0',color:'var(--tx2)'}}>
           <div style={{fontSize:40,marginBottom:8}}>📜</div>
@@ -1214,11 +1497,15 @@ function HistoryTab({certificates,certTypes,fbOk,onRefresh,onView,onEdit,onDelet
       ) : (
         grouped.map(([catName,certs])=>{
           const isCollapsed=!!collapsed[catName];
+          const allSelected=certs.every(c=>selectedIds.has(c.certId));
           return(
             <div className="cat-section" key={catName}>
-              <div className="cat-hdr" style={{cursor:'pointer'}} onClick={()=>toggleCat(catName)}>
-                <span style={{fontSize:14,color:'var(--tx2)'}}>{isCollapsed?'▸':'▾'}</span>
-                <h3 style={{flex:1}}>🏆 {catName}</h3>
+              <div className="cat-hdr">
+                <span style={{fontSize:14,color:'var(--tx2)',cursor:'pointer'}} onClick={()=>toggleCat(catName)}>{isCollapsed?'▸':'▾'}</span>
+                <h3 style={{flex:1,cursor:'pointer'}} onClick={()=>toggleCat(catName)}>🏆 {catName}</h3>
+                <label style={{display:'flex',alignItems:'center',gap:5,fontSize:9.5,fontWeight:700,color:'var(--tx2)',cursor:'pointer'}}>
+                  <input type="checkbox" checked={allSelected} onChange={e=>selectAllInList(certs,e.target.checked)}/> Select All
+                </label>
                 <span className="cat-count">{certs.length} certificate{certs.length!==1?'s':''}</span>
               </div>
               {!isCollapsed && (
@@ -1226,8 +1513,12 @@ function HistoryTab({certificates,certTypes,fbOk,onRefresh,onView,onEdit,onDelet
                   {certs.map(c=>{
                     const ct=c.snapshot||certTypes.find(t=>t.id===c.certTypeId);
                     const pairs=fieldPairs(c);
+                    const busy=singleBusyId===c.certId;
                     return(
-                      <div className="hist-card" key={c.certId}>
+                      <div className="hist-card" key={c.certId} style={{position:'relative'}}>
+                        <label style={{position:'absolute',top:10,right:10,cursor:'pointer'}}>
+                          <input type="checkbox" checked={selectedIds.has(c.certId)} onChange={()=>toggleSelect(c.certId)}/>
+                        </label>
                         <div className="hist-name">{ct?.name||c.certTypeName||'Certificate'}</div>
                         <div className="hist-meta">
                           {pairs.map(([lbl,val])=>(<div key={lbl}><strong style={{color:'var(--navy)'}}>{lbl}:</strong> {val||'—'}</div>))}
@@ -1237,6 +1528,8 @@ function HistoryTab({certificates,certTypes,fbOk,onRefresh,onView,onEdit,onDelet
                         <div style={{display:'flex',gap:5,marginTop:9,flexWrap:'wrap'}}>
                           <button className="btn btn-navy btn-xs" onClick={()=>onView(c)}>👁 View / Print</button>
                           <button className="btn btn-grn btn-xs" onClick={()=>onEdit(c)}>✏️ Edit</button>
+                          <button className="btn btn-ghost btn-xs" onClick={()=>downloadSingleImage(c)} disabled={busy}>{busy?'…':'🖼 PNG'}</button>
+                          <button className="btn btn-ghost btn-xs" onClick={()=>downloadSinglePdf(c)} disabled={busy}>{busy?'…':'📄 PDF'}</button>
                           <button className="btn btn-red btn-xs" onClick={()=>onDelete(c.certId)}>🗑</button>
                         </div>
                       </div>
@@ -1247,6 +1540,11 @@ function HistoryTab({certificates,certTypes,fbOk,onRefresh,onView,onEdit,onDelet
             </div>
           );
         })
+      )}
+      {bulkPreview && (
+        <div style={{position:'absolute',left:-99999,top:0,pointerEvents:'none'}} ref={hiddenRef}>
+          <CertificateView certType={bulkPreview.ct} values={bulkPreview.cert.values} certId={bulkPreview.cert.certId} scale={1} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam}/>
+        </div>
       )}
     </div>
   );
@@ -1811,7 +2109,7 @@ useEffect(()=>{
           {tab==='types' && <TypesTab certTypes={certTypes} onOpenCreate={()=>setShowCreateType(true)} onSelectDesign={(id)=>{setDesignId(id);setTab('designer');}} onDelete={deleteType} onReplaceImage={replaceTypeImage}/>}
           {tab==='designer' && <DesignerTab certType={activeDesignType} certTypes={certTypes} onUpdate={updateType} onSaveCloud={saveTypeToCloud} onReplaceImage={replaceTypeImage} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} onBack={()=>setTab('types')}/>}
           {tab==='create' && <CreateTab certTypes={certTypes} onGenerated={onGenerated} fbOk={fbOk} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} onBack={()=>setTab('types')}/>}
-          {tab==='history' && <HistoryTab certificates={certificates} certTypes={certTypes} fbOk={fbOk} onRefresh={reloadCerts} onView={setViewingCert} onEdit={setEditingCert} onDelete={deleteCert}/>}
+          {tab==='history' && <HistoryTab certificates={certificates} certTypes={certTypes} fbOk={fbOk} onRefresh={reloadCerts} onView={setViewingCert} onEdit={setEditingCert} onDelete={deleteCert} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam}/>}
         </div>
       </div>
 
