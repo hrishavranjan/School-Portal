@@ -1,0 +1,2508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>TWS Certificate Studio — Teachers Welfare Society</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;900&family=Cinzel:wght@400;600;700;900&family=Cormorant+Garamond:wght@400;600;700&family=Great+Vibes&family=Dancing+Script:wght@400;700&family=Raleway:wght@400;600;700;800&family=Barlow:wght@400;600;700;800;900&family=Barlow+Condensed:wght@400;600;700;800;900&family=Poppins:wght@400;600;700;900&family=Marcellus&family=EB+Garamond:wght@400;600;700&family=Tangerine:wght@700&family=Sacramento&family=Pacifico&family=Caveat:wght@400;700&family=Kalam:wght@400;700&family=Satisfy&family=Indie+Flower&family=Permanent+Marker&family=Shadows+Into+Light&family=Allura&family=Alex+Brush&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+/* =====================================================================
+   TEACHERS WELFARE SOCIETY — CERTIFICATE STUDIO
+   Adapted from the general Certificate Generator engine. Changes made:
+   1) Certificate ID format is now  TWS/<BRANCH_CODE>/<CURRENT_YEAR>/<4-digit-random>
+      e.g. TWS/BR/2026/4821  — year is read from the system clock automatically.
+      <BRANCH_CODE> comes from the Branch you create (default "BR"), so this
+      supports multiple state/district branches later if needed.
+   2) Certificates are now FIXED to A4 paper. When creating a certificate
+      TYPE you still choose "Horizontal" (A4 landscape) or "Vertical"
+      (A4 portrait) — the canvas, PDF export and browser print all use the
+      exact A4 pixel/mm size for whichever orientation you picked.
+   3) Verification is meant to be handled by a SEPARATE Cloudflare Worker
+      (worker.js) that you'll get in a follow-up. Leave WORKER_CONFIG.url
+      blank for now and the app will verify certificates on this same page
+      instead (fallback mode) — once you deploy the worker, just paste its
+      URL below and QR codes will point there instead.
+   4) Re-branded copy: "School" → "Branch / Chapter", "Session" → "Year / Batch".
+   5) Firestore data now lives under a separate `twsBranches` collection so
+      it never mixes with any other certificate/ID-card app you may run on
+      the same Firebase project.
+   Everything else (label editor, image upload + positioning, QR block
+   positioning, bulk Excel generation, history, edit, print/PDF/PNG/WhatsApp
+   export) works exactly like the original engine.
+   ===================================================================== */
+
+/* ============ CLOUDINARY (optional image hosting — put your own here) ============ */
+window.CLOUDINARY_CONFIG = { cloudName:'dbqqvmkss', uploadPreset:'Student Cerificate', folder:'school-id-cards/teachers' };
+
+/* ============ VERIFICATION WORKER (leave blank until your worker.js is deployed) ============ */
+window.CERT_WORKER_CONFIG = { url: 'https://tws-cid.coex.workers.dev' };
+
+/* ============ APP CONFIG ============
+   branchId  -> the Firestore branch doc id this deployment belongs to.
+                Leave blank to resolve it from the URL, e.g. ?branch=BRANCH_ID
+   ==================================== */
+window.CERT_APP_CONFIG = {
+  branchId: ''
+};
+</script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script>
+(function(){
+  /* ⚠️ Put YOUR OWN Firebase project config here before deploying. */
+  const firebaseConfig = {
+    apiKey:"AIzaSyCKjBisAbjBrqLgMiIGVrXipypvpL1BLFw",
+    authDomain:"id-card-studio-coex.firebaseapp.com",
+    projectId:"id-card-studio-coex",
+    storageBucket:"id-card-studio-coex.firebasestorage.app",
+    messagingSenderId:"560739605567",
+    appId:"1:560739605567:web:5ddc295d98c1627a732c8a"
+  };
+  window.uploadToCloudinary = async function(dataUrl, folder){
+    const cfg = window.CLOUDINARY_CONFIG;
+    if(!cfg.cloudName || cfg.cloudName==='YOUR_CLOUD_NAME') throw new Error('Cloudinary not configured.');
+    const res = await fetch(dataUrl); const blob = await res.blob();
+    const fd = new FormData(); fd.append('file', blob); fd.append('upload_preset', cfg.uploadPreset);
+    if(folder||cfg.folder) fd.append('folder', folder||cfg.folder);
+    const up = await fetch(`https://api.cloudinary.com/v1_1/${cfg.cloudName}/image/upload`,{method:'POST',body:fd});
+    if(!up.ok){const e=await up.json().catch(()=>({}));throw new Error('Cloudinary upload failed: '+(e.error?.message||up.status));}
+    const d = await up.json(); return d.secure_url;
+  };
+  const IS_CONFIGURED = firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith('YOUR_');
+  window._fbConfigured = IS_CONFIGURED;
+  if(!IS_CONFIGURED){ window._fbReady=false; document.dispatchEvent(new Event('fbNotConfigured')); }
+  else{
+    (async function init(){
+      try{
+        const app = firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        db.settings({ ignoreUndefinedProperties: true });
+        const col = (p)=>db.collection(p);
+        const doc = (p,id)=>db.collection(p).doc(id);
+
+        // NOTE: top-level collection is `twsBranches` (not `schools`) so this
+        // never collides with any other certificate/ID-card app on the same project.
+        const colPath = (branchId,session,sub)=>`twsBranches/${encodeURIComponent(branchId)}/sessions/${encodeURIComponent(session)}/${sub}`;
+
+        // ---- Branches (read-only here - provisioned by admin/backoffice) ----
+        window.fbLoadSchoolById = async (branchId)=>{
+          if(!branchId) return null;
+          const id = branchId.replace(/[^\w]/g,'_');
+          const snap = await doc('twsBranches',id).get();
+          return snap.exists ? snap.data() : null;
+        };
+        window.fbLoadSchools = async (adminEmail)=>{
+          if(adminEmail){
+            const snap = await col('twsBranches').where('adminEmail','==',adminEmail).get();
+            if(!snap.empty) return snap.docs.map(d=>d.data());
+          }
+          return [];
+        };
+        window.fbSaveOneSchool = async (branch)=>{
+          const id = branch.id.replace(/[^\w]/g,'_');
+          await doc('twsBranches',id).set({
+            id:branch.id, name:branch.name, code:branch.code||'BR', sessions:branch.sessions||[],
+            adminEmail: branch.adminEmail||'',
+            line2:branch.line2||'', line3:branch.line3||'', line4:branch.line4||'',
+            updatedAt:Date.now()
+          },{merge:true});
+        };
+
+        // ---- Certificate Types (scoped to branch/session) ----
+        window.fbSaveCertType = async (ct, branchId, session)=>{
+          const id = ct.id.replace(/[^\w]/g,'_');
+          const cp = colPath(branchId,session,'certTypes');
+          await db.collection(cp).doc(id).set({...ct, updatedAt: Date.now()}, {merge:true});
+        };
+        window.fbLoadCertTypes = async (branchId, session)=>{
+          const cp = colPath(branchId,session,'certTypes');
+          const snap = await db.collection(cp).get();
+          return snap.docs.map(d=>d.data());
+        };
+        window.fbDeleteCertType = async (id, branchId, session)=>{
+          const cp = colPath(branchId,session,'certTypes');
+          await db.collection(cp).doc(id.replace(/[^\w]/g,'_')).delete();
+        };
+
+        // ---- Certificates (generated instances, scoped to branch/session) ----
+        window.fbSaveCertificate = async (cert, branchId, session)=>{
+          const id = cert.certId.replace(/[^\w]/g,'_');
+          const cp = colPath(branchId,session,'certificates');
+          await db.collection(cp).doc(id).set({...cert, BRANCH_ID:branchId, SESSION:session, updatedAt: Date.now()}, {merge:true});
+        };
+        window.fbLoadCertificates = async (branchId, session)=>{
+          const cp = colPath(branchId,session,'certificates');
+          const snap = await db.collection(cp).orderBy('createdAt','desc').get().catch(async()=>await db.collection(cp).get());
+          return snap.docs.map(d=>d.data());
+        };
+        window.fbDeleteCertificate = async (certId, branchId, session)=>{
+          const cp = colPath(branchId,session,'certificates');
+          await db.collection(cp).doc(certId.replace(/[^\w]/g,'_')).delete();
+        };
+        window.fbGetCertificateById = async (certId, branchId, session)=>{
+          const cp = colPath(branchId,session,'certificates');
+          const snap = await db.collection(cp).doc(certId.replace(/[^\w]/g,'_')).get();
+          return snap.exists ? snap.data() : null;
+        };
+        // Global lookup across all branches/sessions (used when verify link has no active branch context)
+                window.fbGetCertificateByIdGlobal = async (certId)=>{
+          const snap = await db.collectionGroup('certificates').where('certId','==',certId).limit(1).get();
+          if(snap.empty) return null;
+          return snap.docs[0].data();
+        };
+        window.fbGetCertificateByShortCode = async (shortCode, branchId, session)=>{
+          if(!branchId||!session) return null;
+          const cp = colPath(branchId,session,'certificates');
+          const snap = await db.collection(cp).where('shortCode','==',shortCode).limit(1).get();
+          return snap.empty ? null : snap.docs[0].data();
+        };
+        window.fbGetCertificateByShortCodeGlobal = async (shortCode)=>{
+          const snap = await db.collectionGroup('certificates').where('shortCode','==',shortCode).limit(1).get();
+          if(snap.empty) return null;
+          return snap.docs[0].data();
+        };
+        window._fbReady = true; document.dispatchEvent(new Event('fbReady'));
+      }catch(e){ console.error('Firebase init error:', e); window._fbReady=false; window._fbInitError=e.message; document.dispatchEvent(new CustomEvent('fbError',{detail:e.message})); }
+    })();
+  }
+})();
+</script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --ink:#1c2430; --gold:#8f6a2e; --gold2:#c9a24d; --navy:#12233d; --deep:#0c1c31;
+  --bg:#f2efe6; --bg2:#e9e2d1; --panel:#fffdf8;
+  --tx:#241f14; --tx2:#5a5344; --tx3:#948a72;
+  --bdr:#e1d8bd; --bdr2:#cdbf9a;
+  --grn:#127a52; --red:#c23b3b; --org:#c07d1d; --purple:#6b3fa0;
+}
+body{font-family:'Raleway',sans-serif;background:linear-gradient(135deg,var(--bg),var(--bg2));color:var(--tx);min-height:100vh;overflow-x:hidden}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--gold);border-radius:3px}
+.app{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+
+/* ===== Top bar ===== */
+.topbar{background:linear-gradient(120deg,var(--navy),var(--deep));color:#fff;display:flex;align-items:center;padding:0 18px;height:58px;flex-shrink:0;border-bottom:3px solid var(--gold);box-shadow:0 2px 14px rgba(0,0,0,.2);gap:10px}
+.brand{display:flex;align-items:center;gap:11px}
+.brand-badge{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--gold),#6e5220);display:flex;align-items:center;justify-content:center;font-size:19px;box-shadow:0 2px 8px rgba(143,106,46,.5)}
+.brand h1{font-family:'Cinzel',serif;font-size:18px;font-weight:700;letter-spacing:1px;line-height:1.1}
+.brand p{font-size:8.5px;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;margin-top:2px}
+.back-btn{width:34px;height:34px;border-radius:8px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s}
+.back-btn:hover{background:rgba(255,255,255,.22)}
+.tabs{display:flex;gap:3px;margin-left:10px;flex:1}
+.tab-btn{padding:8px 16px;border-radius:6px;font-size:11.5px;font-weight:700;cursor:pointer;border:none;background:rgba(255,255,255,.06);color:rgba(255,255,255,.6);font-family:'Raleway',sans-serif;letter-spacing:.4px;text-transform:uppercase;transition:all .2s}
+.tab-btn:hover{background:rgba(255,255,255,.15);color:#fff}
+.tab-btn.active{background:linear-gradient(135deg,var(--gold),#6e5220);color:#fff;box-shadow:0 2px 10px rgba(143,106,46,.4)}
+.top-right{display:flex;align-items:center;gap:8px}
+.fb-pill{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);border-radius:20px;padding:4px 12px;font-size:9.5px;font-weight:700}
+.fb-dot{width:7px;height:7px;border-radius:50%}
+.fb-dot.ok{background:var(--grn);box-shadow:0 0 6px var(--grn)}
+.fb-dot.err{background:var(--red);box-shadow:0 0 6px var(--red)}
+.fb-dot.spin{background:var(--org);animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ===== Context bar (branch / year) ===== */
+.context-bar{background:linear-gradient(90deg,#081120,var(--navy));color:#fff;height:34px;display:flex;align-items:center;padding:0 16px;gap:8px;font-size:10px;border-bottom:1px solid rgba(255,255,255,.1);flex-shrink:0}
+.ctx-sel{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);color:#fff;padding:3px 9px;border-radius:5px;font-size:10.5px;font-weight:700;font-family:'Raleway',sans-serif;cursor:pointer;outline:none}
+.ctx-sel option{background:var(--navy);color:#fff}
+.ctx-btn{padding:3px 9px;border-radius:5px;font-size:9.5px;font-weight:700;cursor:pointer;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.1);color:#fff;font-family:'Raleway',sans-serif;transition:all .15s}
+.ctx-btn:hover{background:rgba(255,255,255,.2)}
+.context-bar .fb-pill{padding:2px 9px;font-size:8.5px;flex-shrink:0}
+
+.app-body{display:flex;flex:1;overflow:hidden}
+.main{flex:1;overflow-y:auto;padding:22px 26px}
+.side{width:300px;min-width:300px;background:var(--panel);border-left:1px solid var(--bdr);overflow-y:auto;flex-shrink:0;box-shadow:-2px 0 14px rgba(0,0,0,.05)}
+.side-hdr{background:linear-gradient(120deg,var(--navy),var(--deep));color:#fff;padding:11px 14px;font-size:10.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;border-bottom:3px solid var(--gold)}
+.side-body{padding:10px}
+
+.page-title{font-family:'Cinzel',serif;font-size:24px;font-weight:700;color:var(--navy);margin-bottom:4px}
+.page-sub{color:var(--tx2);font-size:11.5px;margin-bottom:16px;line-height:1.6}
+
+.btn{display:inline-flex;align-items:center;gap:5px;padding:8px 15px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;border:none;transition:all .15s;white-space:nowrap;font-family:'Raleway',sans-serif;letter-spacing:.3px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-gold{background:linear-gradient(135deg,var(--gold),#6e5220);color:#fff;box-shadow:0 2px 8px rgba(143,106,46,.35)}.btn-gold:hover:not(:disabled){filter:brightness(1.1)}
+.btn-navy{background:var(--navy);color:#fff}.btn-navy:hover:not(:disabled){background:#182a4d}
+.btn-ghost{background:#fff;color:var(--navy);border:1.4px solid var(--bdr2)}.btn-ghost:hover:not(:disabled){background:#fbf6e8}
+.btn-red{background:rgba(194,59,59,.1);color:var(--red);border:1px solid rgba(194,59,59,.28)}.btn-red:hover:not(:disabled){background:rgba(194,59,59,.2)}
+.btn-grn{background:rgba(18,122,82,.1);color:var(--grn);border:1px solid rgba(18,122,82,.28)}.btn-grn:hover:not(:disabled){background:rgba(18,122,82,.2)}
+.btn-wa{background:#25D366;color:#fff}.btn-wa:hover:not(:disabled){background:#1ebe58}
+.btn-sm{padding:5px 10px;font-size:9.5px}
+.btn-xs{padding:3px 7px;font-size:8.5px}
+
+/* ===== Certificate Type cards (list) ===== */
+.type-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+.type-card{background:var(--panel);border:1.5px solid var(--bdr);border-radius:10px;overflow:hidden;cursor:pointer;transition:all .18s;box-shadow:0 2px 10px rgba(0,0,0,.05)}
+.type-card:hover{border-color:var(--gold);box-shadow:0 6px 22px rgba(143,106,46,.22);transform:translateY(-2px)}
+.type-thumb{width:100%;height:130px;object-fit:cover;background:#ece3d0;display:block}
+.type-info{padding:10px 12px}
+.type-name{font-family:'Cinzel',serif;font-weight:700;font-size:13px;color:var(--navy);margin-bottom:2px}
+.type-meta{font-size:9.5px;color:var(--tx3)}
+.type-actions{display:flex;gap:5px;padding:0 12px 10px}
+.add-type-card{border:2.5px dashed var(--bdr2);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:210px;cursor:pointer;color:var(--tx2);background:#fffdf6;transition:all .18s}
+.add-type-card:hover{border-color:var(--gold);color:var(--gold)}
+.add-type-card .aic{font-size:34px}
+
+/* ===== Modals ===== */
+.modal-bg{position:fixed;inset:0;background:rgba(10,8,3,.55);z-index:1000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);padding:20px}
+.modal{background:var(--panel);border-radius:12px;padding:22px;max-width:640px;width:100%;max-height:88vh;overflow-y:auto;box-shadow:0 24px 70px rgba(0,0,0,.35);border-top:4px solid var(--gold)}
+.modal-hdr-row{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+.modal-back{width:28px;height:28px;border-radius:6px;background:#fbf6e8;border:1px solid var(--bdr2);color:var(--navy);font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.modal-back:hover{background:var(--gold);color:#fff}
+.modal h3{font-family:'Cinzel',serif;font-size:18px;font-weight:700;color:var(--navy);margin:0}
+.f-lbl{font-size:10px;font-weight:700;color:var(--tx2);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px}
+.f-input,.f-select{width:100%;border:1.4px solid var(--bdr2);border-radius:6px;padding:8px 11px;font-size:12px;outline:none;font-family:'Raleway',sans-serif;background:#fff;margin-bottom:11px}
+.f-input:focus,.f-select:focus{border-color:var(--gold)}
+.upload-zone{border:2.5px dashed var(--bdr2);border-radius:10px;padding:30px 16px;text-align:center;cursor:pointer;background:#fffdf6;transition:all .2s;margin-bottom:12px}
+.upload-zone:hover{border-color:var(--gold);background:#fbf5e4}
+.upload-zone img{max-width:100%;max-height:160px;border-radius:6px;margin-bottom:8px}
+.label-row{display:flex;gap:6px;align-items:center;margin-bottom:7px;background:#fbf6e8;border:1px solid var(--bdr);border-radius:7px;padding:7px 9px}
+.label-row input[type=text]{flex:1;border:1px solid var(--bdr2);border-radius:5px;padding:5px 8px;font-size:11px;outline:none;font-family:'Raleway',sans-serif}
+.label-row select{border:1px solid var(--bdr2);border-radius:5px;padding:5px 6px;font-size:10px;outline:none;font-family:'Raleway',sans-serif;background:#fff}
+.label-row .lr-del{background:rgba(194,59,59,.12);border:1px solid rgba(194,59,59,.3);color:var(--red);border-radius:5px;width:24px;height:24px;cursor:pointer;font-size:11px;flex-shrink:0}
+.chip-suggest{display:inline-flex;align-items:center;background:#fff;border:1px solid var(--bdr2);border-radius:20px;padding:4px 11px;font-size:9.5px;font-weight:700;color:var(--navy);margin:2px;cursor:pointer;transition:all .15s}
+.chip-suggest:hover{background:var(--gold);color:#fff;border-color:var(--gold)}
+
+/* ===== Certificate frame (rendered canvas) ===== */
+.cert-outer{background:#e7ded0;border-radius:10px;padding:20px;overflow:auto}
+.cert-frame{position:relative;background:#fff;box-shadow:0 8px 40px rgba(0,0,0,.22);margin:0 auto;overflow:hidden;border-radius:4px}
+.cert-frame img.cert-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
+.cert-label{position:absolute;white-space:nowrap;z-index:5;user-select:none;cursor:pointer;padding:1px 4px;border-radius:3px;transition:box-shadow .12s}
+.cert-label.selected{box-shadow:0 0 0 2px var(--purple),0 0 0 5px rgba(107,63,160,.15)}
+.cert-label:hover{box-shadow:0 0 0 2px rgba(107,63,160,.4)}
+.cert-qr-block{position:absolute;z-index:6;cursor:pointer;background:#fff;padding:3px;border-radius:4px;border:1px solid rgba(0,0,0,.12);box-shadow:0 1px 4px rgba(0,0,0,.15)}
+.cert-qr-block.selected{box-shadow:0 0 0 2px var(--purple)}
+.cert-idtext{position:absolute;z-index:6;font-family:'Barlow Condensed',monospace;letter-spacing:.5px;cursor:pointer;padding:1px 4px;border-radius:3px}
+.cert-idtext.selected{box-shadow:0 0 0 2px var(--purple)}
+.cert-photo-block{position:absolute;z-index:6;cursor:pointer;overflow:hidden;border:1px solid rgba(0,0,0,.15);box-shadow:0 1px 4px rgba(0,0,0,.15);background:#f4efe4}
+.cert-photo-block.selected{box-shadow:0 0 0 2px var(--purple)}
+.cert-photo-block img{width:100%;height:100%;object-fit:cover;display:block}
+
+/* ===== Designer sidebar blocks ===== */
+.dz-sec{margin-bottom:8px;border:1px solid var(--bdr);border-radius:8px;overflow:hidden}
+.dz-sec-hdr{padding:8px 11px;background:linear-gradient(90deg,#fbf6e8,#f4ecd6);font-size:10px;font-weight:800;color:var(--navy);letter-spacing:.4px;text-transform:uppercase}
+.dz-sec-body{padding:10px;background:#fff}
+.arr-btn{width:22px;height:22px;display:flex;align-items:center;justify-content:center;background:#fbf6e8;border:1px solid var(--bdr2);border-radius:4px;font-size:10px;font-weight:700;color:var(--navy);cursor:pointer;flex-shrink:0}
+.arr-btn:hover{background:var(--gold);color:#fff;border-color:var(--gold)}
+.arr-btn.rst{font-size:8px;width:20px;height:20px;background:#fdf0f0;border-color:#f0b8b8;color:var(--red)}
+.arr-btn.rst:hover{background:var(--red);color:#fff}
+.sld-row{display:flex;align-items:center;gap:4px;margin-bottom:5px}
+.sld-lbl{font-size:9px;color:var(--tx2);font-weight:700;text-transform:uppercase;min-width:36px}
+.sld-val{font-size:9px;color:var(--gold);font-weight:800;min-width:34px;text-align:right}
+input[type=range]{flex:1;accent-color:var(--gold);height:3px;cursor:pointer}
+input[type=color]{width:30px;height:22px;border:1px solid var(--bdr2);border-radius:4px;cursor:pointer;background:none;padding:1px}
+.tog{position:relative;display:inline-block;width:30px;height:16px;flex-shrink:0}
+.tog input{opacity:0;width:0;height:0}
+.tog-sl{position:absolute;cursor:pointer;inset:0;background:#ccc;border-radius:16px;transition:.25s}
+.tog-sl:before{content:'';position:absolute;height:10px;width:10px;left:3px;bottom:3px;background:white;border-radius:50%;transition:.25s}
+input:checked+.tog-sl{background:var(--gold)}
+input:checked+.tog-sl:before{transform:translateX(14px)}
+
+/* ===== Form fields (create tab) ===== */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:780px;margin-bottom:14px}
+.form-field label{font-size:10px;font-weight:700;color:var(--tx2);text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:4px}
+.form-field input{width:100%;border:1.4px solid var(--bdr2);border-radius:6px;padding:8px 11px;font-size:12px;outline:none;font-family:'Raleway',sans-serif;background:#fff}
+.form-field input:focus{border-color:var(--gold)}
+
+/* ===== History / Gallery ===== */
+.hist-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.hist-card{background:var(--panel);border:1.5px solid var(--bdr);border-radius:10px;padding:12px;transition:all .15s}
+.hist-card:hover{border-color:var(--gold);box-shadow:0 4px 16px rgba(143,106,46,.15)}
+.hist-name{font-family:'Cinzel',serif;font-weight:700;font-size:13.5px;color:var(--navy)}
+.hist-meta{font-size:9.5px;color:var(--tx2);line-height:1.7;margin:5px 0 8px}
+.hist-id{display:inline-block;background:#fbf6e8;border:1px solid var(--bdr2);border-radius:4px;padding:2px 7px;font-size:9px;font-family:monospace;color:var(--navy);font-weight:700}
+.filter-bar{display:flex;gap:7px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+.filter-bar input,.filter-bar select{background:#fff;border:1.3px solid var(--bdr2);border-radius:6px;color:var(--tx);padding:7px 10px;font-size:11px;outline:none;font-family:'Raleway',sans-serif}
+.filter-bar input{flex:1;min-width:160px}
+.cat-section{margin-bottom:26px}
+.cat-hdr{display:flex;align-items:center;gap:8px;margin-bottom:11px;padding-bottom:7px;border-bottom:2px solid var(--bdr2)}
+.cat-hdr h3{font-family:'Cinzel',serif;font-size:15px;font-weight:700;color:var(--navy)}
+.cat-count{background:var(--gold);color:#fff;border-radius:20px;padding:1px 10px;font-size:10px;font-weight:800}
+
+/* ===== Toast ===== */
+.toast{display:flex;align-items:center;gap:7px;padding:9px 15px;border-radius:7px;font-size:11px;font-weight:700;min-width:200px;animation:tin .3s ease;box-shadow:0 4px 20px rgba(0,0,0,.2)}
+.toast.s{background:#ecfdf5;border:1px solid var(--grn);color:#065f37}
+.toast.e{background:#fef2f2;border:1px solid var(--red);color:#8f2020}
+.toast.w{background:#fffbeb;border:1px solid var(--org);color:#7a5108}
+.toast.i{background:#eff6ff;border:1px solid #2563eb;color:#1e40af}
+@keyframes tin{from{transform:translateX(110%);opacity:0}to{transform:translateX(0);opacity:1}}
+
+/* ===== Verify overlay ===== */
+.verify-overlay{position:fixed;inset:0;background:rgba(8,6,3,.9);z-index:3000;display:flex;align-items:flex-start;justify-content:center;padding:24px;overflow-y:auto}
+.verify-card{background:#fdfaf2;max-width:560px;width:100%;border-radius:14px;overflow:hidden;box-shadow:0 24px 90px rgba(0,0,0,.5);margin:auto;border-top:5px solid var(--gold)}
+.verify-hdr{background:linear-gradient(120deg,var(--navy),var(--deep));padding:22px;text-align:center}
+.verify-badge{display:inline-flex;align-items:center;gap:7px;background:linear-gradient(135deg,#0d5c3d,var(--grn));color:#fff;padding:7px 20px;border-radius:50px;font-size:12.5px;font-weight:800;letter-spacing:.6px;margin-bottom:10px;box-shadow:0 4px 16px rgba(18,122,82,.4)}
+.verify-close{position:fixed;top:16px;right:16px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:16px;z-index:3001}
+.verify-close:hover{background:rgba(255,255,255,.25)}
+.verify-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0}
+.verify-field{background:#fff;border-radius:7px;padding:9px;border:1px solid var(--bdr)}
+.verify-field-lbl{font-size:8.5px;font-weight:800;color:var(--tx3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
+.verify-field-val{font-size:12px;font-weight:700;color:var(--navy);font-family:'Cinzel',serif}
+.verify-name-banner{background:linear-gradient(135deg,#ecfdf5,#d1fae5);border:2px solid var(--grn);border-radius:9px;padding:14px;text-align:center;margin-top:12px}
+.verify-name-banner .vnb-name{font-family:'Cinzel',serif;font-size:17px;font-weight:800;color:#065f37;margin-bottom:2px}
+.verify-name-banner .vnb-sub{font-size:11px;color:#0d5c3d;font-weight:700}
+
+/* ===== Branch loading / not-found screen ===== */
+.setup-overlay{position:fixed;inset:0;background:linear-gradient(135deg,var(--navy),var(--deep));z-index:99998;display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto}
+.setup-card{background:#fffdf8;border-radius:16px;width:100%;max-width:520px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.4)}
+.setup-hdr{background:linear-gradient(135deg,var(--navy),var(--deep));padding:22px;text-align:center;border-bottom:3px solid var(--gold)}
+.setup-body{padding:26px;text-align:center}
+.session-chip{display:inline-flex;align-items:center;background:#fbf6e8;border:1px solid var(--bdr2);border-radius:20px;padding:3px 10px;font-size:9px;font-weight:700;color:var(--navy);margin:2px;cursor:pointer;transition:all .15s}
+.session-chip:hover{background:#f4ecd6}
+.session-chip.active{background:var(--navy);color:#fff;border-color:var(--navy)}
+
+.skel{height:60px;background:linear-gradient(90deg,#eee3c8 25%,#e0d5b4 50%,#eee3c8 75%);background-size:200%;animation:shim 1.4s infinite;border-radius:8px;margin-bottom:8px}
+@keyframes shim{0%{background-position:200%}100%{background-position:-200%}}
+
+#print-target{position:absolute;left:-99999px;top:0;pointer-events:none}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="toast-root" style="position:fixed;top:12px;right:12px;z-index:9999;display:flex;flex-direction:column;gap:6px;pointer-events:none"></div>
+
+<script type="text/babel">
+const {useState,useEffect,useRef,useMemo,useCallback,memo}=React;
+
+/* ============================ CONSTANTS ============================ */
+const FONTS=[
+  {g:'Elegant Serif',items:[
+    {l:'Playfair Display',v:"'Playfair Display',serif"},{l:'Cinzel',v:"'Cinzel',serif"},
+    {l:'Cormorant Garamond',v:"'Cormorant Garamond',serif"},{l:'EB Garamond',v:"'EB Garamond',serif"},
+    {l:'Marcellus',v:"'Marcellus',serif"},
+  ]},
+  {g:'Script / Signature',items:[
+    {l:'Great Vibes',v:"'Great Vibes',cursive"},{l:'Dancing Script',v:"'Dancing Script',cursive"},
+    {l:'Tangerine',v:"'Tangerine',cursive"},{l:'Sacramento',v:"'Sacramento',cursive"},
+    {l:'Pacifico',v:"'Pacifico',cursive"},{l:'Caveat',v:"'Caveat',cursive"},
+    {l:'Kalam',v:"'Kalam',cursive"},{l:'Satisfy',v:"'Satisfy',cursive"},
+    {l:'Indie Flower',v:"'Indie Flower',cursive"},{l:'Permanent Marker',v:"'Permanent Marker',cursive"},
+    {l:'Shadows Into Light',v:"'Shadows Into Light',cursive"},{l:'Allura',v:"'Allura',cursive"},
+    {l:'Alex Brush',v:"'Alex Brush',cursive"},
+  ]},
+  {g:'Modern Sans',items:[
+    {l:'Raleway',v:"'Raleway',sans-serif"},{l:'Barlow',v:"'Barlow',sans-serif"},
+    {l:'Barlow Condensed',v:"'Barlow Condensed',sans-serif"},{l:'Poppins',v:"'Poppins',sans-serif"},
+  ]},
+  {g:'System',items:[
+    {l:'Arial',v:"Arial,sans-serif"},{l:'Times New Roman',v:"'Times New Roman',serif"},
+    {l:'Georgia',v:"Georgia,serif"},
+  ]},
+];
+const ALL_FONTS=FONTS.flatMap(g=>g.items);
+const SUGGESTED_LABELS=["Teacher Name","Father's / Husband's Name","School / Institution Name","Designation","District","Membership Number","Date of Joining","Years of Service","Award / Category"];
+const DEFAULT_CATEGORIES=["Membership","Appreciation","Long Service","Excellence in Teaching","Retirement Honour","Merit","Participation","Honorary","Completion"];
+
+const loadedFonts=new Set(['Raleway','Barlow','Barlow Condensed','Playfair Display','Cinzel','Cormorant Garamond','Great Vibes','Dancing Script','Poppins','Marcellus','EB Garamond','Tangerine','Sacramento']);
+function ensureFontLoaded(fv){
+  const name=fv.replace(/['"]/g,'').split(',')[0].trim();
+  if(loadedFonts.has(name))return; loadedFonts.add(name);
+  const slug=name.replace(/\s+/g,'+');
+  const link=document.createElement('link'); link.rel='stylesheet';
+  link.href=`https://fonts.googleapis.com/css2?family=${slug}:wght@400;700&display=swap`;
+  document.head.appendChild(link);
+}
+
+function showToast(msg,type='i'){
+  const c=document.getElementById('toast-root');
+  const el=document.createElement('div'); el.className=`toast ${type}`;
+  const ic={s:'✓',e:'✗',w:'⚠',i:'ℹ'}[type]||'ℹ';
+  el.innerHTML=`<span style="font-size:14px">${ic}</span><span>${msg}</span>`;
+  el.style.pointerEvents='all'; c.appendChild(el);
+  setTimeout(()=>{el.style.animation='tin .3s reverse'; setTimeout(()=>el.remove(),280);},3200);
+}
+
+/* Certificate ID: TWS/<BRANCH_CODE>/<CURRENT_YEAR>/<4-digit-random>  e.g. TWS/BR/2026/4821 */
+function genCertId(branchCode){
+  const code=(branchCode||'BR').toUpperCase().replace(/[^A-Z0-9]/g,'')||'BR';
+  const year=new Date().getFullYear();
+  const num=String(Math.floor(1000+Math.random()*9000));
+  return `TWS/${code}/${year}/${num}`;
+}
+/* Deterministic short code derived from certId — used ONLY for the QR payload
+   so the QR stays small. The certificate ID itself is untouched everywhere else. */
+function genShortCode(certId){
+  let hash=0;
+  for(let i=0;i<certId.length;i++){ hash=(hash*31 + certId.charCodeAt(i))|0; }
+  hash=Math.abs(hash);
+  return hash.toString(36).toUpperCase().padStart(5,'0').slice(-5);
+}
+function uid(prefix){ return `${prefix||'id'}_${Date.now()}_${Math.random().toString(36).slice(2,8)}`; }
+function slugKey(label){ return label.toUpperCase().replace(/[^A-Z0-9]+/g,'_').replace(/^_|_$/g,'')||('FIELD_'+Math.random().toString(36).slice(2,5)); }
+function fmtDate(iso){
+  if(!iso) return '';
+  const d=new Date(iso+'T00:00:00');
+  if(isNaN(d)) return iso;
+  const dd=String(d.getDate()).padStart(2,'0');
+  const mm=String(d.getMonth()+1).padStart(2,'0');
+  return `${dd}/${mm}/${d.getFullYear()}`;
+}
+async function waitForImagesLoaded(container, timeout=4000){
+  const imgs = Array.from(container.querySelectorAll('img'));
+  const start = Date.now();
+  await Promise.all(imgs.map(img => new Promise(resolve=>{
+    if(img.complete && img.naturalWidth>0) return resolve();
+    const done=()=>resolve();
+    img.addEventListener('load', done, {once:true});
+    img.addEventListener('error', done, {once:true});
+    setTimeout(done, Math.max(0, timeout-(Date.now()-start)));
+  })));
+}
+
+/* A4 @ 96dpi, pixel-perfect so PDF/print need no rescaling */
+const ORIENTATIONS={
+  landscape:{w:1123,h:794},   // A4 landscape (297mm x 210mm)
+  portrait:{w:794,h:1123},    // A4 portrait  (210mm x 297mm)
+};
+
+/* Injects/updates a single @page rule so browser Print always matches
+   the certificate's own orientation (horizontal vs vertical), A4 only. */
+function setPrintPageOrientation(orientation){
+  const o = orientation==='portrait' ? 'portrait' : 'landscape';
+  let style=document.getElementById('dynamic-print-style');
+  if(!style){ style=document.createElement('style'); style.id='dynamic-print-style'; document.head.appendChild(style); }
+  style.textContent = `
+    @media print{
+      @page{size:A4 ${o};margin:0}
+      *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+      body *{visibility:hidden!important}
+      #print-target, #print-target *{visibility:visible!important}
+      html,body{background:#fff!important;height:auto!important;overflow:visible!important;margin:0!important}
+      #print-target{display:block!important;position:fixed!important;top:0!important;left:0!important;width:100vw;height:100vh;margin:0;padding:0;overflow:hidden;z-index:99999}
+      #print-target .cert-frame{margin:0!important;transform:scale(1);transform-origin:top left;}
+    }
+  `;
+}
+
+const DEFAULT_QR={show:true,x:0,y:0,size:70,position:'bottom-right'};
+const DEFAULT_IDTEXT={show:true,x:0,y:0,fontSize:9,color:'#333333'};
+const DEFAULT_PHOTO={show:false,x:0,y:0,w:110,h:130,position:'top-right',round:0,zoom:100,perCertificate:false};
+const DEFAULT_ISSUE={show:true,x:0,y:0,fontSize:9,color:'#333333',showYearOnly:false};
+
+function defaultLabelStyle(i){
+  return {fontSize:16,fontFamily:ALL_FONTS[0].v,color:'#1c2430',bold:false,italic:false,align:'center',x:0,y:260+i*46,letterSpacing:0};
+}
+
+/* ============================ SMALL UI HELPERS ============================ */
+function SliderRow({label,val,min,max,step=1,unit='',onChange,arrowStep}){
+  const aStep=arrowStep||step;
+  const clamp=v=>Math.min(max,Math.max(min,parseFloat((+v).toFixed(step<1?2:0))));
+  return(
+    <div style={{marginBottom:6}}>
+      <div className="sld-row">
+        <span className="sld-lbl">{label}</span>
+        <button className="arr-btn" onClick={()=>onChange(clamp(val-aStep))}>◀</button>
+        <input type="range" min={min} max={max} step={step} value={val} onChange={e=>onChange(clamp(e.target.value))}/>
+        <button className="arr-btn" onClick={()=>onChange(clamp(val+aStep))}>▶</button>
+        <span className="sld-val">{val}{unit}</span>
+      </div>
+    </div>
+  );
+}
+function XY({x,y,onX,onY,min=-800,max=800,onReset}){
+  const cl=(v)=>Math.min(max,Math.max(min,v));
+  return(
+    <div style={{marginBottom:6}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:3}}>
+        <span style={{fontSize:9,fontWeight:800,color:'var(--navy)',textTransform:'uppercase'}}>Position</span>
+        {onReset&&<button className="arr-btn rst" onClick={onReset}>↺</button>}
+      </div>
+      <div className="sld-row"><span className="sld-lbl">◀▶</span><button className="arr-btn" onClick={()=>onX(cl(x-1))}>◀</button><input type="range" min={min} max={max} value={x} onChange={e=>onX(cl(+e.target.value))}/><button className="arr-btn" onClick={()=>onX(cl(x+1))}>▶</button><span className="sld-val">{x}</span></div>
+      <div className="sld-row"><span className="sld-lbl">▲▼</span><button className="arr-btn" onClick={()=>onY(cl(y-1))}>▲</button><input type="range" min={min} max={max} value={y} onChange={e=>onY(cl(+e.target.value))}/><button className="arr-btn" onClick={()=>onY(cl(y+1))}>▼</button><span className="sld-val">{y}</span></div>
+    </div>
+  );
+}
+function FontPick({value,onChange}){
+  return(
+    <select className="f-select" style={{marginBottom:6,fontFamily:value}} value={value} onChange={e=>{ensureFontLoaded(e.target.value);onChange(e.target.value);}}>
+      {FONTS.map(g=>(<optgroup key={g.g} label={g.g}>{g.items.map(f=><option key={f.v} value={f.v} style={{fontFamily:f.v}}>{f.l}</option>)}</optgroup>))}
+    </select>
+  );
+}
+
+/* ============================ QR CODE ============================ */
+const QRBox=memo(function QRBox({url,size}){
+  const ref=useRef();
+  useEffect(()=>{
+    if(!ref.current||!url)return;
+    ref.current.innerHTML='';
+    try{ new QRCode(ref.current,{text:url,width:size,height:size,colorDark:'#000',colorLight:'#fff',correctLevel:QRCode.CorrectLevel.H}); }
+    catch(e){ console.warn('QR err',e); }
+  },[url,size]);
+  return <div ref={ref} style={{width:size,height:size}}/>;
+});
+
+/* ============================ CERTIFICATE RENDER ============================ */
+const CertificateView=memo(function CertificateView({certType,values,certId,scale=1,selectedLabelId,onSelectLabel,verifyBaseUrl,verifyParam='verify',interactive=false,issueDate,teacherPhoto}){
+  if(!certType) return null;
+  const dim=ORIENTATIONS[certType.orientation||'landscape'];
+  const W=dim.w*scale, H=dim.h*scale;
+  const qr=certType.qr||DEFAULT_QR;
+  const idt=certType.idText||DEFAULT_IDTEXT;
+  const photo=certType.photo||DEFAULT_PHOTO;
+  const iss=certType.issueDate||DEFAULT_ISSUE;
+  const shortCode = certId ? genShortCode(certId) : '';
+const verifyUrl = shortCode && verifyBaseUrl ? `${verifyBaseUrl.replace(/\/$/,'')}${verifyBaseUrl.includes('?')?'&':'?'}${verifyParam}=${shortCode}` : (shortCode?`#verify=${shortCode}`:'');
+  const qrStyle={position:'absolute',zIndex:6};
+  const qrSizePx=(qr.size||70)*scale;
+  if((qr.position||'bottom-right')==='bottom-right'){ qrStyle.right=(14-(qr.x||0))*scale; qrStyle.bottom=(14+(qr.y||0))*scale; }
+  else if(qr.position==='bottom-left'){ qrStyle.left=(14+(qr.x||0))*scale; qrStyle.bottom=(14+(qr.y||0))*scale; }
+  else if(qr.position==='top-right'){ qrStyle.right=(14-(qr.x||0))*scale; qrStyle.top=(14+(qr.y||0))*scale; }
+  else { qrStyle.left=(14+(qr.x||0))*scale; qrStyle.top=(14+(qr.y||0))*scale; }
+
+  const photoStyle={position:'absolute',zIndex:6,width:(photo.w||110)*scale,height:(photo.h||130)*scale,borderRadius:(photo.round||0)*scale};
+  if((photo.position||'top-right')==='top-right'){ photoStyle.right=(16-(photo.x||0))*scale; photoStyle.top=(16+(photo.y||0))*scale; }
+  else if(photo.position==='top-left'){ photoStyle.left=(16+(photo.x||0))*scale; photoStyle.top=(16+(photo.y||0))*scale; }
+  else if(photo.position==='bottom-right'){ photoStyle.right=(16-(photo.x||0))*scale; photoStyle.bottom=(16+(photo.y||0))*scale; }
+  else { photoStyle.left=(16+(photo.x||0))*scale; photoStyle.bottom=(16+(photo.y||0))*scale; }
+
+  return(
+    <div className="cert-frame" style={{width:W,height:H}}>
+      {certType.templateImage && <img className="cert-bg" src={certType.templateImage} alt="template" crossOrigin="anonymous"/>}
+      {(certType.labels||[]).map(lb=>{
+        const st=lb.style||defaultLabelStyle(0);
+        let val=(values&&values[lb.key])||'';
+        if(lb.type==='date' && val) val=fmtDate(val);
+        const isSel=selectedLabelId===lb.id;
+        return(
+          <div key={lb.id}
+            className={`cert-label${isSel?' selected':''}`}
+            onClick={interactive?(e)=>{e.stopPropagation();onSelectLabel&&onSelectLabel(lb.id);}:undefined}
+            style={{
+              left:'50%', top:(st.y||0)*scale,
+              transform:`translate(calc(-50% + ${(st.x||0)*scale}px),0)`,
+              fontFamily:st.fontFamily||ALL_FONTS[0].v,
+              fontSize:(st.fontSize||16)*scale,
+              color:st.color||'#1c2430',
+              fontWeight:st.bold?800:500,
+              fontStyle:st.italic?'italic':'normal',
+              textAlign:st.align||'center',
+              letterSpacing:(st.letterSpacing||0)+'px',
+              cursor:interactive?'pointer':'default'
+            }}>{lb.type==='image' ? (
+  val ? <img src={val} crossOrigin="anonymous" alt={lb.label} style={{width:(st.imgWidth||100)*scale,height:(st.imgHeight||100)*scale,objectFit:'cover',borderRadius:(st.imgRound||0)*scale,transform:`scale(${(st.imgZoom||100)/100})`}}/>
+       : <div style={{width:(st.imgWidth||100)*scale,height:(st.imgHeight||100)*scale,background:'#f4efe4',display:'flex',alignItems:'center',justifyContent:'center',fontSize:9*scale,color:'#999'}}>{lb.label}</div>
+) : (val || `{{${lb.label}}}`)}</div>
+        );
+      })}
+            {idt.show!==false && certId && (
+        <div className={`cert-idtext${selectedLabelId==='__idtext__'?' selected':''}`}
+          onClick={interactive?(e)=>{e.stopPropagation();onSelectLabel&&onSelectLabel('__idtext__');}:undefined}
+          style={{left:12+(idt.x||0)*scale,bottom:10+(-(idt.y||0))*scale,fontSize:(idt.fontSize||9)*scale,color:idt.color||'#333',cursor:interactive?'pointer':'default'}}>
+          ID: {certId}
+        </div>
+      )}
+      {iss.show!==false && issueDate && (
+        <div className={`cert-idtext${selectedLabelId==='__issue__'?' selected':''}`}
+          onClick={interactive?(e)=>{e.stopPropagation();onSelectLabel&&onSelectLabel('__issue__');}:undefined}
+          style={{right:12-(iss.x||0)*scale,bottom:10+(-(iss.y||0))*scale,fontSize:(iss.fontSize||9)*scale,color:iss.color||'#333',cursor:interactive?'pointer':'default'}}>
+          {iss.showYearOnly ? new Date(issueDate).getFullYear() : `Issued: ${fmtDate(issueDate)}`}
+        </div>
+      )}
+      {qr.show!==false && (
+        <div className={`cert-qr-block${selectedLabelId==='__qr__'?' selected':''}`} style={qrStyle}
+          onClick={interactive?(e)=>{e.stopPropagation();onSelectLabel&&onSelectLabel('__qr__');}:undefined}>
+          {verifyUrl ? <QRBox url={verifyUrl} size={qrSizePx}/> : <div style={{width:qrSizePx,height:qrSizePx,background:'#eee',display:'flex',alignItems:'center',justifyContent:'center',fontSize:9*scale,color:'#999'}}>QR</div>}
+        </div>
+      )}
+      {photo.show && (
+        <div className={`cert-photo-block${selectedLabelId==='__photo__'?' selected':''}`} style={photoStyle}
+          onClick={interactive?(e)=>{e.stopPropagation();onSelectLabel&&onSelectLabel('__photo__');}:undefined}>
+          {(()=>{
+            const src = photo.perCertificate ? teacherPhoto : photo.image;
+            if(src) return <img src={src} crossOrigin="anonymous" alt="photo" style={{width:'100%',height:'100%',objectFit:'cover',transform:`scale(${(photo.zoom||100)/100})`,transformOrigin:'center center'}}/>;
+            return <div style={{width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:9*scale,color:'#999',background:'#f4efe4',textAlign:'center',padding:2}}>{photo.perCertificate?'Teacher Photo':'Photo'}</div>;
+          })()}
+        </div>
+      )}
+    </div>
+  );
+});
+
+/* ============================ CREATE CERT-TYPE MODAL (upload + labels) ============================ */
+function CreateTypeModal({onClose,onCreated,fbOk,existingCategories}){
+  const [step,setStep]=useState(1); // 1 upload, 2 details+labels
+  const [templateImage,setTemplateImage]=useState(null);
+  const [name,setName]=useState('');
+  const [listName,setListName]=useState(existingCategories[0]||DEFAULT_CATEGORIES[0]);
+  const [orientation,setOrientation]=useState('landscape');
+  const [labels,setLabels]=useState([{id:uid('lb'),label:'Teacher Name',key:'TEACHER_NAME',type:'text'}]);
+  const [saving,setSaving]=useState(false);
+  const fileRef=useRef();
+  const allCats=[...new Set([...existingCategories,...DEFAULT_CATEGORIES])];
+
+  const handleFile=async(f)=>{
+    if(!f||!f.type.match(/image\//)){showToast('Please upload an image file','e');return;}
+    const reader=new FileReader();
+    reader.onload=e=>{ setTemplateImage(e.target.result); setStep(2); };
+    reader.readAsDataURL(f);
+  };
+  const addLabel=(preset,type)=>{
+    const lbl=preset||'New Field';
+    setLabels(ls=>[...ls,{id:uid('lb'),label:lbl,key:slugKey(lbl)+'_'+ls.length,type:type||'text'}]);
+  };
+  const updateLabel=(id,txt)=>setLabels(ls=>ls.map(l=>l.id===id?{...l,label:txt,key:slugKey(txt)}:l));
+  const updateLabelType=(id,type)=>setLabels(ls=>ls.map(l=>l.id===id?{...l,type}:l));
+  const removeLabel=(id)=>setLabels(ls=>ls.filter(l=>l.id!==id));
+
+  const create=async()=>{
+    if(!name.trim()){showToast('Enter a certificate type name','w');return;}
+    if(!listName.trim()){showToast('Enter or select a category','w');return;}
+    if(!labels.length){showToast('Add at least one label','w');return;}
+    setSaving(true);
+    let img=templateImage;
+    const cloudReady=window.CLOUDINARY_CONFIG.cloudName&&window.CLOUDINARY_CONFIG.cloudName!=='YOUR_CLOUD_NAME';
+    if(cloudReady){ try{ img=await window.uploadToCloudinary(templateImage, window.CLOUDINARY_CONFIG.folder+'/templates'); }catch(e){ console.warn(e); } }
+    const ct={
+      id:uid('ctype'), name:name.trim(), listName:listName.trim(), orientation,
+      templateImage:img,
+      labels: labels.map((l,i)=>({id:l.id,label:l.label,key:l.key,type:l.type||'text',style:defaultLabelStyle(i)})),
+            qr:{...DEFAULT_QR}, idText:{...DEFAULT_IDTEXT}, photo:{...DEFAULT_PHOTO}, issueDate:{...DEFAULT_ISSUE},
+      createdAt:Date.now()
+    };
+    onCreated(ct);
+    setSaving(false);
+  };
+
+  return(
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <div className="modal-hdr-row">
+          {step===2 && <button className="modal-back" onClick={()=>setStep(1)}>←</button>}
+          <h3>🏅 New Certificate Type — Step {step} of 2</h3>
+        </div>
+        {step===1 && (<>
+          <div className="upload-zone" onClick={()=>fileRef.current.click()} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();handleFile(e.dataTransfer.files[0]);}}>
+            <div style={{fontSize:34,marginBottom:8}}>🖼️</div>
+            <div style={{fontWeight:700,color:'var(--navy)',fontSize:13}}>Upload Certificate Template</div>
+            <div style={{fontSize:10,color:'var(--tx2)',marginTop:4}}>PNG / JPG · Saved exactly as uploaded</div>
+            <input ref={fileRef} type="file" accept="image/*" style={{display:'none'}} onChange={e=>handleFile(e.target.files[0])}/>
+          </div>
+          <div style={{display:'flex',justifyContent:'flex-end'}}><button className="btn btn-ghost" onClick={onClose}>Cancel</button></div>
+        </>)}
+        {step===2 && (<>
+          <img src={templateImage} style={{width:'100%',maxHeight:160,objectFit:'contain',background:'#f4efe4',borderRadius:8,marginBottom:12}} alt=""/>
+          <span className="f-lbl">Certificate Name (internal)</span>
+          <input className="f-input" placeholder="e.g. TWS Long Service Honour 2026" value={name} onChange={e=>setName(e.target.value)}/>
+          <span className="f-lbl">Certificate List / Category</span>
+          <input className="f-input" list="cert-cat-list" placeholder="Type new or pick existing category…" value={listName} onChange={e=>setListName(e.target.value)}/>
+          <datalist id="cert-cat-list">{allCats.map(c=><option key={c} value={c}/>)}</datalist>
+          <span className="f-lbl">Orientation (fixed to A4)</span>
+          <div style={{display:'flex',gap:6,marginBottom:6}}>
+            {['landscape','portrait'].map(o=>(<button key={o} onClick={()=>setOrientation(o)} style={{flex:1,padding:'7px',fontSize:11,fontWeight:700,border:'1.4px solid',borderColor:orientation===o?'var(--gold)':'var(--bdr2)',background:orientation===o?'#fbf1d8':'#fff',color:orientation===o?'var(--navy)':'var(--tx2)',borderRadius:6,cursor:'pointer'}}>{o==='landscape'?'▭ Horizontal (A4 Landscape)':'▯ Vertical (A4 Portrait)'}</button>))}
+          </div>
+          <div style={{fontSize:9,color:'var(--tx3)',marginBottom:11}}>Your uploaded template image will be stretched to fit the chosen A4 orientation exactly — design your artwork at 1123×794px (horizontal) or 794×1123px (vertical) for a perfect fit.</div>
+
+          <div style={{fontSize:11,fontWeight:800,color:'var(--navy)',textTransform:'uppercase',letterSpacing:.4,marginBottom:6}}>What does this certificate contain? (Labels)</div>
+          <div style={{marginBottom:8}}>
+            {SUGGESTED_LABELS.filter(s=>!labels.find(l=>l.label===s)).map(s=>(<span key={s} className="chip-suggest" onClick={()=>addLabel(s,'text')}>+ {s}</span>))}
+            {!labels.find(l=>l.type==='date') && <span className="chip-suggest" style={{background:'#fbf1d8'}} onClick={()=>addLabel('Date','date')}>📅 + Date</span>}
+          </div>
+          {labels.map(l=>(
+            <div className="label-row" key={l.id}>
+              <input type="text" value={l.label} onChange={e=>updateLabel(l.id,e.target.value)} placeholder="Label name"/>
+              <select value={l.type||'text'} onChange={e=>updateLabelType(l.id,e.target.value)}>
+                <option value="text">Text</option>
+                <option value="date">📅 Date</option>
+                  <option value="image">🖼 Image (URL)</option>
+              </select>
+              <button className="lr-del" onClick={()=>removeLabel(l.id)}>✕</button>
+            </div>
+          ))}
+          <button className="btn btn-ghost btn-sm" style={{marginBottom:14}} onClick={()=>addLabel()}>➕ Add Custom Label</button>
+
+          <div style={{display:'flex',gap:8}}>
+            <button className="btn btn-gold" style={{flex:1}} onClick={create} disabled={saving}>{saving?'Creating…':'✓ Create Certificate Type'}</button>
+            <button className="btn btn-ghost" onClick={()=>setStep(1)}>← Back</button>
+          </div>
+        </>)}
+      </div>
+    </div>
+  );
+}
+
+/* ============================ IMPORT LABELS MODAL ============================ */
+function ImportLabelsModal({currentType,otherTypes,allTypes,onClose,onImport}){
+  const [pickedId,setPickedId]=useState(otherTypes[0]?.id||'');
+  const [mode,setMode]=useState('append'); // append | replace
+  const picked=otherTypes.find(t=>t.id===pickedId);
+
+  const templateNoOf=(t)=>{
+    const src=allTypes||otherTypes;
+    const sameCat=src.filter(x=>(x.listName||'Uncategorized')===(t.listName||'Uncategorized'));
+    const idx=sameCat.findIndex(x=>x.id===t.id);
+    return idx>=0?idx+1:1;
+  };
+
+  useEffect(()=>{
+    if(picked) showToast(`Previewing Template ${templateNoOf(picked)} — ${picked.name} (${picked.listName})`,'i');
+  },[pickedId]);
+
+  const doImport=()=>{
+    if(!picked){ showToast('Select a template to import from','w'); return; }
+    const cloned=(picked.labels||[]).map((l,i)=>({
+      ...l,
+      id:uid('lb'),
+      key: mode==='append' ? slugKey(l.label)+'_imp_'+Date.now()+'_'+i : l.key,
+      style:{...l.style}
+    }));
+    onImport(cloned,mode);
+    showToast(`Imported ${cloned.length} label${cloned.length!==1?'s':''} from "${picked.name}" ✓`,'s');
+  };
+  return(
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <div className="modal-hdr-row"><h3>⇪ Import Labels From Another Template</h3></div>
+        {!otherTypes.length ? (
+          <div style={{fontSize:11,color:'var(--tx2)',padding:'16px 0'}}>No other certificate templates exist yet in this branch/year to import from.</div>
+        ) : (<>
+          <span className="f-lbl">Source Template</span>
+          <select className="f-select" value={pickedId} onChange={e=>setPickedId(e.target.value)}>
+            {otherTypes.map(t=><option key={t.id} value={t.id}>{t.listName} — Template {templateNoOf(t)} ({t.name}) · {(t.labels||[]).length} labels</option>)}
+          </select>
+          {picked && (
+            <div style={{display:'flex',flexWrap:'wrap',gap:5,margin:'8px 0 14px'}}>
+              {(picked.labels||[]).map(l=>(<span key={l.id} className="chip-suggest" style={{cursor:'default'}}>{l.type==='date'?'📅 ':''}{l.label}</span>))}
+            </div>
+          )}
+          <span className="f-lbl">Import Mode</span>
+          <div style={{display:'flex',gap:6,marginBottom:14}}>
+            <button onClick={()=>setMode('append')} style={{flex:1,padding:'7px',fontSize:11,fontWeight:700,border:'1.4px solid',borderColor:mode==='append'?'var(--gold)':'var(--bdr2)',background:mode==='append'?'#fbf1d8':'#fff',color:'var(--navy)',borderRadius:6,cursor:'pointer'}}>➕ Add to Current Labels</button>
+            <button onClick={()=>setMode('replace')} style={{flex:1,padding:'7px',fontSize:11,fontWeight:700,border:'1.4px solid',borderColor:mode==='replace'?'var(--gold)':'var(--bdr2)',background:mode==='replace'?'#fbf1d8':'#fff',color:'var(--navy)',borderRadius:6,cursor:'pointer'}}>♻ Replace All Labels</button>
+          </div>
+          <div style={{fontSize:9.5,color:'var(--tx3)',marginBottom:14,lineHeight:1.5}}>After importing you can rename, restyle, reposition, add, or delete any label as usual in the panel on the right.</div>
+          <div style={{display:'flex',gap:8}}>
+            <button className="btn btn-gold" style={{flex:1}} onClick={doImport}>⇪ Import Labels</button>
+            <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          </div>
+        </>)}
+      </div>
+    </div>
+  );
+}
+
+/* ============================ BULK GENERATE MODAL (Excel) ============================ */
+function BulkGenerateModal({certType,branchCode,verifyBaseUrl,verifyParam,onGenerated,onClose}){
+  const [rows,setRows]=useState(null);
+  const [processing,setProcessing]=useState(false);
+  const [progress,setProgress]=useState({done:0,total:0});
+  const [currentPreview,setCurrentPreview]=useState(null);
+  const hiddenRef=useRef();
+  const labels=certType?.labels||[];
+  const [photoMap,setPhotoMap]=useState({});
+
+  const downloadSample=()=>{
+    if(!window.XLSX){ showToast('Excel engine still loading — try again in a moment','w'); return; }
+    const headers=labels.map(l=>l.label);
+    const sampleRow={};
+    labels.forEach(l=>{ sampleRow[l.label] = l.type==='date' ? '15-01-2026' : (l.type==='image' ? 'photo1.jpg' : ''); });
+    sampleRow['Issue Date']='15-01-2026';
+const ws=XLSX.utils.json_to_sheet([sampleRow],{header:[...headers,'Issue Date']});
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'Certificates');
+    XLSX.writeFile(wb,`${(certType.name||'certificate').replace(/[^\w-]+/g,'_')}_sample.xlsx`);
+    const hasDate=labels.some(l=>l.type==='date');
+    showToast(hasDate?'Sample downloaded ✓ — dates use DD-MM-YYYY (e.g. 15-01-2026)':'Sample Excel downloaded ✓','s');
+  };
+
+  const handleFile=(f)=>{
+    if(!f) return;
+    if(!window.XLSX){ showToast('Excel engine still loading — try again','w'); return; }
+    const reader=new FileReader();
+    reader.onload=(e)=>{
+      try{
+        const wb=XLSX.read(e.target.result,{type:'array'});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        const json=XLSX.utils.sheet_to_json(ws,{defval:''});
+        if(!json.length){ showToast('That Excel sheet has no rows','w'); return; }
+        const headerSet=Object.keys(json[0]);
+        const missing=labels.filter(l=>!headerSet.includes(l.label));
+        if(missing.length){ showToast(`Excel is missing column(s): ${missing.map(m=>m.label).join(', ')}`,'e'); return; }
+        setRows(json);
+        showToast(`Loaded ${json.length} row(s) from Excel ✓`,'s');
+      }catch(err){ showToast('Could not read that Excel file: '+err.message,'e'); }
+    };
+    reader.readAsArrayBuffer(f);
+  };
+
+  const processRows=async()=>{
+    if(!rows||!rows.length){ showToast('Upload a filled Excel file first','w'); return; }
+    setProcessing(true); setProgress({done:0,total:rows.length});
+    let ok=0, bad=0;
+
+    for(let i=0;i<rows.length;i++){
+      const row=rows[i]; const values={}; let rowMissing=false;
+      for(const l of labels){
+  if(l.type==='image'){
+    const fname=String(row[l.label]??'').trim();
+    let img=photoMap[fname]||'';
+    if(img){
+      const cloudReady=window.CLOUDINARY_CONFIG.cloudName&&window.CLOUDINARY_CONFIG.cloudName!=='YOUR_CLOUD_NAME';
+      if(cloudReady){ try{ img=await window.uploadToCloudinary(img, window.CLOUDINARY_CONFIG.folder+'/photos'); }catch(e){} }
+    }
+    if(!img) rowMissing=true;
+    values[l.key]=img;
+    continue;
+  }
+  let v=String(row[l.label]??'').trim();
+  if(l.type==='date' && v){
+    if(!isNaN(v) && window.XLSX?.SSF){
+      const d=XLSX.SSF.parse_date_code(Number(v));
+      if(d) v=`${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+    } else {
+      const m=v.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
+      if(m) v=`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+    }
+  }
+  if(!v) rowMissing=true;
+  values[l.key]=v;
+}
+
+      if(rowMissing){ bad++; showToast(`Row ${i+2}: missing a value, skipped`,'w'); setProgress({done:i+1,total:rows.length}); continue; }
+
+      let issueDate=String(row['Issue Date']??'').trim();
+      if(issueDate){
+        const m=issueDate.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
+        issueDate = m ? `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}` : new Date().toISOString().slice(0,10);
+      }else{
+        issueDate=new Date().toISOString().slice(0,10);
+      }
+
+      const certId=genCertId(branchCode);
+      setCurrentPreview({values,certId,issueDate});
+
+      await new Promise(r=>setTimeout(r,60));
+
+      let node=null;
+      for(let t=0;t<20;t++){ node=hiddenRef.current?.querySelector('.cert-frame'); if(node) break; await new Promise(r=>setTimeout(r,50)); }
+
+      let certImageUrl=null;
+      if(node){
+        try{
+          await waitForImagesLoaded(node);
+          const canvas=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:'#ffffff'});
+          const dataUrl=canvas.toDataURL('image/png');
+          const cloudReady=window.CLOUDINARY_CONFIG.cloudName && window.CLOUDINARY_CONFIG.cloudName!=='YOUR_CLOUD_NAME';
+          if(cloudReady){ try{ certImageUrl=await window.uploadToCloudinary(dataUrl, window.CLOUDINARY_CONFIG.folder+'/certificates'); }catch(e){} }
+        }catch(e){}
+      }
+
+      const cert={
+        certId, shortCode:genShortCode(certId), certTypeId:certType.id, certTypeName:certType.name, listName:certType.listName,
+        values, createdAt:Date.now(), createdDate:new Date().toISOString().slice(0,10),
+        issueDate, issueYear:new Date(issueDate).getFullYear(),
+        snapshot:{templateImage:certType.templateImage, labels:certType.labels, qr:certType.qr, idText:certType.idText, photo:certType.photo, issueDate:certType.issueDate, orientation:certType.orientation},
+        certImageUrl
+      };
+
+      try{ await onGenerated(cert); ok++; }
+      catch(e){ bad++; showToast(`Row ${i+2}: save failed — ${e.message}`,'e'); }
+
+      setProgress({done:i+1,total:rows.length});
+    }
+
+    setCurrentPreview(null); setProcessing(false);
+    showToast(`Bulk generation done: ${ok} created${bad?`, ${bad} skipped/failed`:''} ✓`,'s');
+  };
+
+  return(
+    <div className="modal-bg" onClick={processing?undefined:onClose}>
+      <div className="modal" style={{maxWidth:560}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-hdr-row"><h3>📊 Bulk Generate Certificates</h3></div>
+        {!certType ? (
+          <div style={{fontSize:11,color:'var(--tx2)'}}>Select a certificate template first.</div>
+        ) : (<>
+          <div style={{fontSize:11,color:'var(--tx2)',marginBottom:12,lineHeight:1.6}}>
+            Download the sample Excel for <strong>{certType.name}</strong>, fill one row per certificate, then upload it here.
+            Columns must match: <strong>{labels.map(l=>l.label).join(', ')}</strong>, plus an optional <strong>Issue Date</strong> column (DD-MM-YYYY; defaults to today if left blank).
+            {labels.some(l=>l.type==='date') && <><br/>Write dates as <strong>DD-MM-YYYY</strong> (e.g. 15-01-2026) — the sample sheet already shows this.</>}
+          </div>
+          <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
+  <button className="btn btn-navy" onClick={downloadSample} disabled={processing}>⬇ Download Sample Excel</button>
+  <label className="btn btn-ghost" style={{cursor:'pointer',margin:0}}>
+    ⬆ Upload Filled Excel
+    <input type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={e=>{handleFile(e.target.files[0]); e.target.value='';}} disabled={processing}/>
+  </label>
+  {labels.some(l=>l.type==='image') && (
+    <label className="btn btn-ghost" style={{cursor:'pointer',margin:0}}>
+      🖼 Upload Photos (select all)
+      <input type="file" accept="image/*" multiple style={{display:'none'}} disabled={processing}
+        onChange={async(e)=>{
+          const files=[...e.target.files]; e.target.value='';
+          const map={...photoMap};
+          for(const f of files){
+            map[f.name]=await new Promise(res=>{const r=new FileReader();r.onload=ev=>res(ev.target.result);r.readAsDataURL(f);});
+          }
+          setPhotoMap(map);
+          showToast(`${files.length} photo(s) loaded — type the exact filename in the photo column`,'s');
+        }}/>
+    </label>
+  )}
+</div>
+{Object.keys(photoMap).length>0 && <div style={{fontSize:10,color:'var(--tx2)',marginBottom:12}}>{Object.keys(photoMap).length} photo(s) ready: {Object.keys(photoMap).join(', ')}</div>}
+          {rows && <div style={{fontSize:11,color:'var(--navy)',fontWeight:700,marginBottom:12}}>{rows.length} row(s) ready.</div>}
+          {processing && (
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:11,fontWeight:700,color:'var(--navy)',marginBottom:5}}>Processing {progress.done} / {progress.total}…</div>
+              <div style={{height:8,background:'#f4efe4',borderRadius:5,overflow:'hidden'}}>
+                <div style={{height:'100%',background:'var(--gold)',width:`${(progress.done/Math.max(1,progress.total))*100}%`,transition:'width .2s'}}/>
+              </div>
+            </div>
+          )}
+          <div style={{display:'flex',gap:8}}>
+            <button className="btn btn-gold" onClick={processRows} disabled={processing||!rows}>{processing?'Generating…':'🏅 Generate All'}</button>
+            <button className="btn btn-ghost" onClick={onClose} disabled={processing}>Close</button>
+          </div>
+        </>)}
+        {currentPreview && (
+          <div style={{position:'absolute',left:-99999,top:0,pointerEvents:'none'}} ref={hiddenRef}>
+            <CertificateView certType={certType} values={currentPreview.values} certId={currentPreview.certId} scale={1} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} issueDate={currentPreview.issueDate}/>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ============================ TYPES TAB ============================ */
+function TypesTab({certTypes,onOpenCreate,onSelectDesign,onDelete,onReplaceImage}){
+  const [collapsed,setCollapsed]=useState({});
+  const toggleCat=(key)=>setCollapsed(p=>({...p,[key]:!p[key]}));
+  const grouped=useMemo(()=>{
+    const g={};
+    certTypes.forEach(ct=>{
+      const key=ct.listName||'Uncategorized';
+      if(!g[key]) g[key]=[];
+      g[key].push(ct);
+    });
+    return Object.entries(g).sort((a,b)=>a[0].localeCompare(b[0]));
+  },[certTypes]);
+
+  return(
+    <div>
+      <div className="page-title">Certificate Types</div>
+      <div className="page-sub">Certificate types are grouped section-wise by category. Each section lists its templates (Template 1, Template 2…). All templates are fixed to A4 — choose Horizontal or Vertical when creating one. Click a template to design, replace its image, or delete it.</div>
+      <div style={{marginBottom:16}}>
+        <button className="btn btn-gold" onClick={onOpenCreate}>➕ Create New Type</button>
+      </div>
+      {!certTypes.length && <div style={{textAlign:'center',padding:'30px 0',color:'var(--tx3)',fontSize:11}}>No certificate types yet for this branch/year. Click "Create New Type" to get started.</div>}
+      {grouped.map(([catName,types])=>{
+        const isCollapsed=!!collapsed[catName];
+        return(
+          <div className="cat-section" key={catName}>
+            <div className="cat-hdr" style={{cursor:'pointer'}} onClick={()=>toggleCat(catName)}>
+              <span style={{fontSize:14,color:'var(--tx2)'}}>{isCollapsed?'▸':'▾'}</span>
+              <h3 style={{flex:1}}>🏅 {catName}</h3>
+              <span className="cat-count">{types.length} template{types.length!==1?'s':''}</span>
+            </div>
+            {!isCollapsed && (
+              <div className="type-grid">
+                {types.map((ct,i)=>(
+                  <div className="type-card" key={ct.id}>
+                    <img className="type-thumb" src={ct.templateImage} alt={ct.name} onClick={()=>onSelectDesign(ct.id)}/>
+                    <div className="type-info" onClick={()=>onSelectDesign(ct.id)}>
+                      <div className="type-name">Template {i+1} — {ct.name}</div>
+                      <div className="type-meta">{(ct.labels||[]).length} labels · {ct.orientation==='portrait'?'Vertical (A4)':'Horizontal (A4)'}</div>
+                    </div>
+                    <div className="type-actions">
+                      <button className="btn btn-navy btn-xs" onClick={()=>onSelectDesign(ct.id)}>🎨 Design</button>
+                      <label className="btn btn-ghost btn-xs" style={{cursor:'pointer',margin:0}}>
+                        🔁 Replace
+                        <input type="file" accept="image/*" style={{display:'none'}} onChange={e=>{ if(e.target.files[0]) onReplaceImage(ct.id,e.target.files[0]); e.target.value=''; }}/>
+                      </label>
+                      <button className="btn btn-red btn-xs" onClick={()=>onDelete(ct.id)}>🗑</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ============================ DESIGNER TAB ============================ */
+function DesignerTab({certType,certTypes,onUpdate,onSaveCloud,onReplaceImage,verifyBaseUrl,verifyParam,onBack}){
+  const [selected,setSelected]=useState(null);
+  const [zoom,setZoom]=useState(0.55);
+  const [showImport,setShowImport]=useState(false);
+  const photoRef=useRef();
+
+  if(!certType) return (
+    <div>
+      <div className="page-sub">Select a certificate type from the "Types" tab first.</div>
+      <button className="btn btn-ghost" onClick={onBack}>← Back to Types</button>
+    </div>
+  );
+
+  const labels=certType.labels||[];
+  const selLabel=labels.find(l=>l.id===selected);
+
+  const updateLabelStyle=(id,patch)=>{
+    onUpdate({...certType, labels: certType.labels.map(l=>l.id===id?{...l,style:{...l.style,...patch}}:l)});
+  };
+  const updateQr=(patch)=>onUpdate({...certType, qr:{...(certType.qr||DEFAULT_QR),...patch}});
+  const updateIdText=(patch)=>onUpdate({...certType, idText:{...(certType.idText||DEFAULT_IDTEXT),...patch}});
+  const updatePhoto=(patch)=>onUpdate({...certType, photo:{...(certType.photo||DEFAULT_PHOTO),...patch}});
+  const updateIssue=(patch)=>onUpdate({...certType, issueDate:{...(certType.issueDate||DEFAULT_ISSUE),...patch}});
+  const handlePhotoUpload=(f)=>{
+    if(!f||!f.type.match(/image\//)){ showToast('Please choose an image file','e'); return; }
+    const reader=new FileReader();
+    reader.onload=async(e)=>{
+      let img=e.target.result;
+      const cloudReady=window.CLOUDINARY_CONFIG.cloudName&&window.CLOUDINARY_CONFIG.cloudName!=='YOUR_CLOUD_NAME';
+      if(cloudReady){
+        try{ img=await window.uploadToCloudinary(img, window.CLOUDINARY_CONFIG.folder+'/photos'); }
+        catch(err){ showToast('Cloud upload failed, using local image: '+err.message,'w'); return; }
+      }
+      updatePhoto({image:img,show:true});
+    };
+    reader.readAsDataURL(f);
+  };
+  const addLabel=()=>{
+    const lbl='New Field';
+    const nl={id:uid('lb'),label:lbl,key:slugKey(lbl)+'_'+labels.length,type:'text',style:defaultLabelStyle(labels.length)};
+    onUpdate({...certType, labels:[...labels,nl]});
+    setSelected(nl.id);
+  };
+  const renameLabel=(id,txt)=>onUpdate({...certType, labels: labels.map(l=>l.id===id?{...l,label:txt,key:slugKey(txt)}:l)});
+  const setLabelType=(id,type)=>onUpdate({...certType, labels: labels.map(l=>l.id===id?{...l,type}:l)});
+  const deleteLabel=(id)=>{ onUpdate({...certType, labels: labels.filter(l=>l.id!==id)}); if(selected===id)setSelected(null); };
+
+  const sampleValues=Object.fromEntries(labels.map(l=>[l.key, l.type==='date'?'2026-01-15':l.label]));
+
+  return(
+    <div style={{display:'flex',gap:16}}>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{display:'flex',alignItems:'center',gap:9,marginBottom:4}}>
+          <button className="modal-back" onClick={onBack} title="Back to Types">←</button>
+          <div className="page-title" style={{marginBottom:0}}>Designer — {certType.name}</div>
+        </div>
+        <div className="page-sub">Click any text, the photo box, or the QR block on the certificate to select & adjust it in the panel on the right. Orientation is fixed to A4 {certType.orientation==='portrait'?'Vertical':'Horizontal'}.</div>
+        <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:12,flexWrap:'wrap'}}>
+          <span style={{fontSize:10,color:'var(--tx2)'}}>Zoom</span>
+          <button className="btn btn-ghost btn-xs" onClick={()=>setZoom(z=>Math.max(.3,+(z-.08).toFixed(2)))}>−</button>
+          <span style={{fontSize:10,fontWeight:700}}>{Math.round(zoom*100)}%</span>
+          <button className="btn btn-ghost btn-xs" onClick={()=>setZoom(z=>Math.min(1,+(z+.08).toFixed(2)))}>+</button>
+          <button className="btn btn-ghost btn-sm" onClick={()=>setShowImport(true)}>⇪ Import Labels</button>
+          <label className="btn btn-ghost btn-sm" style={{cursor:'pointer',margin:0}}>
+            🔁 Replace Image
+            <input type="file" accept="image/*" style={{display:'none'}} onChange={e=>{ if(e.target.files[0]&&onReplaceImage) onReplaceImage(certType.id,e.target.files[0]); e.target.value=''; }}/>
+          </label>
+          <label className="btn btn-ghost btn-sm" style={{cursor:'pointer',margin:0}}>
+            🖼 {certType.photo?.image?'Replace Photo':'Add Photo Box'}
+            <input ref={photoRef} type="file" accept="image/*" style={{display:'none'}} onChange={e=>{ if(e.target.files[0]) handlePhotoUpload(e.target.files[0]); e.target.value=''; }}/>
+          </label>
+          <button className="btn btn-gold btn-sm" onClick={addLabel}>➕ Add Label</button>
+          <button className="btn btn-grn btn-sm" onClick={()=>onSaveCloud(certType)}>💾 Save Template</button>
+        </div>
+        <div className="cert-outer" onClick={()=>setSelected(null)}>
+          <CertificateView certType={certType} values={sampleValues} certId="TWS/BR/2026/0000" scale={zoom} selectedLabelId={selected} onSelectLabel={setSelected} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} interactive={true} issueDate="2026-01-15" teacherPhoto={null}/>
+        </div>
+        <div style={{marginTop:14}}>
+          <div style={{fontSize:11,fontWeight:800,color:'var(--navy)',textTransform:'uppercase',marginBottom:6}}>All Labels</div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+            {labels.map(l=>(
+              <div key={l.id} style={{display:'flex',alignItems:'center',gap:4,background:selected===l.id?'#fbf1d8':'#fff',border:'1px solid var(--bdr2)',borderRadius:20,padding:'4px 10px'}}>
+                <span style={{fontSize:10,fontWeight:700,color:'var(--navy)',cursor:'pointer'}} onClick={()=>setSelected(l.id)}>{l.type==='date'?'📅 ':''}{l.label}</span>
+                <button className="lr-del" style={{width:16,height:16,fontSize:8}} onClick={()=>deleteLabel(l.id)}>✕</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="side" style={{position:'static',boxShadow:'none',borderLeft:'1px solid var(--bdr)'}}>
+        <div className="side-hdr">⚙ Adjust</div>
+        <div className="side-body">
+          {!selected && <div style={{fontSize:11,color:'var(--tx3)',padding:'20px 6px',textAlign:'center'}}>Select a label, the ID text, the photo box, or the QR block on the certificate to adjust it here.</div>}
+
+          {selLabel && (<div className="dz-sec">
+            <div className="dz-sec-hdr">✏️ {selLabel.label}</div>
+            <div className="dz-sec-body">
+              <span className="f-lbl">Label Name</span>
+              <input className="f-input" value={selLabel.label} onChange={e=>renameLabel(selLabel.id,e.target.value)}/>
+              <span className="f-lbl">Field Type</span>
+              <select className="f-select" value={selLabel.type||'text'} onChange={e=>setLabelType(selLabel.id,e.target.value)}>
+                <option value="text">Text</option>
+                <option value="date">📅 Date</option>
+                  <option value="image">🖼 Image (URL)</option>
+              </select>
+              <XY x={selLabel.style.x||0} y={selLabel.style.y||0} onX={v=>updateLabelStyle(selLabel.id,{x:v})} onY={v=>updateLabelStyle(selLabel.id,{y:v})} onReset={()=>updateLabelStyle(selLabel.id,{x:0})}/>
+{selLabel.type==='image' ? (<>
+  <SliderRow label="Width" val={selLabel.style.imgWidth||100} min={30} max={320} onChange={v=>updateLabelStyle(selLabel.id,{imgWidth:v})} unit="px"/>
+  <SliderRow label="Height" val={selLabel.style.imgHeight||100} min={30} max={320} onChange={v=>updateLabelStyle(selLabel.id,{imgHeight:v})} unit="px"/>
+  <SliderRow label="Round" val={selLabel.style.imgRound||0} min={0} max={160} onChange={v=>updateLabelStyle(selLabel.id,{imgRound:v})} unit="px"/>
+  <SliderRow label="Zoom" val={selLabel.style.imgZoom||100} min={50} max={300} onChange={v=>updateLabelStyle(selLabel.id,{imgZoom:v})} unit="%"/>
+</>) : (
+  <SliderRow label="Size" val={selLabel.style.fontSize||16} min={8} max={72} onChange={v=>updateLabelStyle(selLabel.id,{fontSize:v})} unit="px"/>
+)}
+              <SliderRow label="Spacing" val={selLabel.style.letterSpacing||0} min={-3} max={20} step={0.5} onChange={v=>updateLabelStyle(selLabel.id,{letterSpacing:v})} unit="px"/>
+              <span className="f-lbl" style={{marginTop:6}}>Font Style</span>
+              <FontPick value={selLabel.style.fontFamily||ALL_FONTS[0].v} onChange={v=>updateLabelStyle(selLabel.id,{fontFamily:v})}/>
+              <div className="sld-row"><span className="sld-lbl">Color</span><input type="color" value={selLabel.style.color||'#1c2430'} onChange={e=>updateLabelStyle(selLabel.id,{color:e.target.value})}/></div>
+              <div style={{display:'flex',gap:5,marginTop:6}}>
+                <button className="btn btn-sm" style={{flex:1,background:selLabel.style.bold?'var(--navy)':'#f4efe4',color:selLabel.style.bold?'#fff':'var(--navy)'}} onClick={()=>updateLabelStyle(selLabel.id,{bold:!selLabel.style.bold})}><b>B</b></button>
+                <button className="btn btn-sm" style={{flex:1,background:selLabel.style.italic?'var(--navy)':'#f4efe4',color:selLabel.style.italic?'#fff':'var(--navy)'}} onClick={()=>updateLabelStyle(selLabel.id,{italic:!selLabel.style.italic})}><i>I</i></button>
+              </div>
+              <span className="f-lbl" style={{marginTop:8}}>Align</span>
+              <div style={{display:'flex',gap:4}}>{['left','center','right'].map(a=>(<button key={a} className="btn btn-sm" style={{flex:1,background:selLabel.style.align===a?'var(--navy)':'#f4efe4',color:selLabel.style.align===a?'#fff':'var(--navy)'}} onClick={()=>updateLabelStyle(selLabel.id,{align:a})}>{a[0].toUpperCase()}</button>))}</div>
+            </div>
+          </div>)}
+
+          {selected==='__idtext__' && (<div className="dz-sec">
+            <div className="dz-sec-hdr">🪪 Certificate ID Text</div>
+            <div className="dz-sec-body">
+              <div className="sld-row"><span className="sld-lbl">Show</span><label className="tog"><input type="checkbox" checked={certType.idText?.show!==false} onChange={e=>updateIdText({show:e.target.checked})}/><span className="tog-sl"/></label></div>
+              <XY x={certType.idText?.x||0} y={certType.idText?.y||0} onX={v=>updateIdText({x:v})} onY={v=>updateIdText({y:v})} min={-800} max={800}/>
+              <SliderRow label="Size" val={certType.idText?.fontSize||9} min={6} max={22} onChange={v=>updateIdText({fontSize:v})} unit="px"/>
+              <div className="sld-row"><span className="sld-lbl">Color</span><input type="color" value={certType.idText?.color||'#333333'} onChange={e=>updateIdText({color:e.target.value})}/></div>
+              <div style={{fontSize:9,color:'var(--tx3)',marginTop:4,lineHeight:1.5}}>Format is fixed: TWS/BRANCH/YEAR/#### — generated automatically for every certificate.</div>
+            </div>
+          </div>)}
+
+          {selected==='__issue__' && (<div className="dz-sec">
+            <div className="dz-sec-hdr">📅 Issue Date / Year</div>
+            <div className="dz-sec-body">
+              <div className="sld-row"><span className="sld-lbl">Show</span><label className="tog"><input type="checkbox" checked={certType.issueDate?.show!==false} onChange={e=>updateIssue({show:e.target.checked})}/><span className="tog-sl"/></label></div>
+              <div className="sld-row"><span className="sld-lbl">Year only</span><label className="tog"><input type="checkbox" checked={!!certType.issueDate?.showYearOnly} onChange={e=>updateIssue({showYearOnly:e.target.checked})}/><span className="tog-sl"/></label></div>
+              <XY x={certType.issueDate?.x||0} y={certType.issueDate?.y||0} onX={v=>updateIssue({x:v})} onY={v=>updateIssue({y:v})} min={-800} max={800}/>
+              <SliderRow label="Size" val={certType.issueDate?.fontSize||9} min={6} max={22} onChange={v=>updateIssue({fontSize:v})} unit="px"/>
+              <div className="sld-row"><span className="sld-lbl">Color</span><input type="color" value={certType.issueDate?.color||'#333333'} onChange={e=>updateIssue({color:e.target.value})}/></div>
+            </div>
+          </div>)}
+
+          {selected==='__photo__' && (<div className="dz-sec">
+            <div className="dz-sec-hdr">🖼 Photo Box</div>
+            <div className="dz-sec-body">
+              <div className="sld-row"><span className="sld-lbl">Show</span><label className="tog"><input type="checkbox" checked={certType.photo?.show===true} onChange={e=>updatePhoto({show:e.target.checked})}/><span className="tog-sl"/></label></div>
+              <div className="sld-row"><span className="sld-lbl">Per-Cert</span><label className="tog"><input type="checkbox" checked={!!certType.photo?.perCertificate} onChange={e=>updatePhoto({perCertificate:e.target.checked})}/><span className="tog-sl"/></label></div>
+              {certType.photo?.perCertificate ? (
+                <div style={{fontSize:9,color:'var(--grn)',marginBottom:8,lineHeight:1.5}}>✓ Per-certificate mode — you'll upload a separate photo for each teacher when creating a certificate. Only position/size/shape are set here.</div>
+              ) : (
+                <label className="btn btn-ghost btn-sm" style={{cursor:'pointer',display:'block',textAlign:'center',marginBottom:8}}>
+                  🔁 {certType.photo?.image?'Replace Image':'Upload Image'}
+                  <input type="file" accept="image/*" style={{display:'none'}} onChange={e=>{ if(e.target.files[0]) handlePhotoUpload(e.target.files[0]); e.target.value=''; }}/>
+                </label>
+              )}
+              <span className="f-lbl">Corner</span>
+              <select className="f-select" value={certType.photo?.position||'top-right'} onChange={e=>updatePhoto({position:e.target.value})}>
+                <option value="top-right">Top Right</option>
+                <option value="top-left">Top Left</option>
+                <option value="bottom-right">Bottom Right</option>
+                <option value="bottom-left">Bottom Left</option>
+              </select>
+              <SliderRow label="Width" val={certType.photo?.w||110} min={40} max={320} onChange={v=>updatePhoto({w:v})} unit="px"/>
+              <SliderRow label="Height" val={certType.photo?.h||130} min={40} max={320} onChange={v=>updatePhoto({h:v})} unit="px"/>
+              <SliderRow label="Round" val={certType.photo?.round||0} min={0} max={160} onChange={v=>updatePhoto({round:v})} unit="px"/>
+<SliderRow label="Zoom" val={certType.photo?.zoom||100} min={50} max={300} onChange={v=>updatePhoto({zoom:v})} unit="%"/>
+              <XY x={certType.photo?.x||0} y={certType.photo?.y||0} onX={v=>updatePhoto({x:v})} onY={v=>updatePhoto({y:v})} onReset={()=>updatePhoto({x:0,y:0})}/>
+              <div style={{fontSize:9,color:'var(--tx3)',marginTop:4,lineHeight:1.5}}>Toggle "Per-Cert" above: OFF = one fixed image on every certificate (e.g. seal/logo). ON = you upload a different photo for each teacher in the Create step.</div>
+            </div>
+          </div>)}
+
+          {selected==='__qr__' && (<div className="dz-sec">
+            <div className="dz-sec-hdr">▦ QR Verification Code</div>
+            <div className="dz-sec-body">
+              <div className="sld-row"><span className="sld-lbl">Show</span><label className="tog"><input type="checkbox" checked={certType.qr?.show!==false} onChange={e=>updateQr({show:e.target.checked})}/><span className="tog-sl"/></label></div>
+              <span className="f-lbl">Corner</span>
+              <select className="f-select" value={certType.qr?.position||'bottom-right'} onChange={e=>updateQr({position:e.target.value})}>
+                <option value="bottom-right">Bottom Right</option>
+                <option value="bottom-left">Bottom Left</option>
+                <option value="top-right">Top Right</option>
+                <option value="top-left">Top Left</option>
+              </select>
+              <SliderRow label="Size" val={certType.qr?.size||70} min={30} max={180} onChange={v=>updateQr({size:v})} unit="px"/>
+              <XY x={certType.qr?.x||0} y={certType.qr?.y||0} onX={v=>updateQr({x:v})} onY={v=>updateQr({y:v})} min={-800} max={800} onReset={()=>updateQr({x:0,y:0})}/>
+              <div style={{fontSize:9,color:'var(--tx3)',marginTop:4,lineHeight:1.5}}>Move the QR block up / down / left / right using the sliders or arrow buttons above — position is saved with this certificate type. Once your verify worker.js is live, paste its URL into CERT_WORKER_CONFIG.url and this QR will point there automatically.</div>
+            </div>
+          </div>)}
+        </div>
+      </div>
+      {showImport && <ImportLabelsModal currentType={certType} otherTypes={(certTypes||[]).filter(c=>c.id!==certType.id)} allTypes={certTypes||[]} onClose={()=>setShowImport(false)} onImport={(newLabels,mode)=>{ onUpdate({...certType, labels: mode==='replace'?newLabels:[...(certType.labels||[]),...newLabels]}); setShowImport(false); }}/>}
+    </div>
+  );
+}
+
+/* ============================ CREATE CERTIFICATE TAB ============================ */
+function CreateTab({certTypes,branchCode,onGenerated,fbOk,verifyBaseUrl,verifyParam,onBack}){
+  const categories=useMemo(()=>[...new Set(certTypes.map(ct=>ct.listName||'Uncategorized'))],[certTypes]);
+  const [pickedCategory,setPickedCategory]=useState(categories[0]||'');
+  useEffect(()=>{ if(categories.length && !categories.includes(pickedCategory)) setPickedCategory(categories[0]); },[categories]);
+
+  const typesInCat=useMemo(()=>certTypes.filter(ct=>(ct.listName||'Uncategorized')===pickedCategory),[certTypes,pickedCategory]);
+
+  const [pickedId,setPickedId]=useState(typesInCat[0]?.id||null);
+  useEffect(()=>{
+    if(!typesInCat.find(t=>t.id===pickedId)) setPickedId(typesInCat[0]?.id||null);
+  },[typesInCat]);
+
+  const [values,setValues]=useState({});
+  const [generated,setGenerated]=useState(null);
+  const [overrides,setOverrides]=useState({});
+  const [selected,setSelected]=useState(null);
+  const [showBulk,setShowBulk]=useState(false);
+  const certType=certTypes.find(c=>c.id===pickedId);
+  const certRef=useRef();
+  const printRef=useRef();
+  const [issueDateVal,setIssueDateVal]=useState(new Date().toISOString().slice(0,10));
+  const [teacherPhotoVal,setTeacherPhotoVal]=useState('');
+
+  const mergedCertType=useMemo(()=>{
+    if(!certType) return null;
+    return {
+      ...certType,
+      labels:(certType.labels||[]).map(l=>({...l,style:{...l.style,...(overrides[l.id]||{})}})),
+      qr:{...(certType.qr||DEFAULT_QR),...(overrides.__qr__||{})},
+      idText:{...(certType.idText||DEFAULT_IDTEXT),...(overrides.__idtext__||{})},
+      photo:{...(certType.photo||DEFAULT_PHOTO),...(overrides.__photo__||{})},
+      issueDate:{...(certType.issueDate||DEFAULT_ISSUE),...(overrides.__issue__||{})}
+    };
+  },[certType,overrides]);
+
+  const updateOverrideLabel=(id,patch)=>setOverrides(p=>({...p,[id]:{...p[id],...patch}}));
+  const updateOverrideQr=(patch)=>setOverrides(p=>({...p,__qr__:{...p.__qr__,...patch}}));
+  const updateOverrideIdText=(patch)=>setOverrides(p=>({...p,__idtext__:{...p.__idtext__,...patch}}));
+  const resetOverrides=()=>{setOverrides({});showToast('Adjustments reset to template defaults','i');};
+
+    useEffect(()=>{ setValues({}); setGenerated(null); setOverrides({}); setSelected(null); setTeacherPhotoVal(''); },[pickedId]);
+  useEffect(()=>{ if(certType) setPrintPageOrientation(certType.orientation); },[certType]);
+
+  if(!certTypes.length){
+    return(
+      <div>
+        <div className="page-sub">No certificate types yet. Go to the <strong>Types</strong> tab and create one first.</div>
+        <button className="btn btn-ghost" onClick={onBack}>← Back to Types</button>
+      </div>
+    );
+  }
+
+  const setVal=(key,v)=>setValues(p=>({...p,[key]:v}));
+
+  const generate=async()=>{
+    if(!certType)return;
+    const missing=(certType.labels||[]).filter(l=>!values[l.key]?.trim());
+    if(missing.length){ showToast(`Fill: ${missing.map(m=>m.label).join(', ')}`,'w'); return; }
+
+    if(certType.photo?.perCertificate && !teacherPhotoVal){ showToast('Please upload the teacher photo first','w'); return; }
+    const certId=genCertId(branchCode);
+    const baseCert={
+      certId, shortCode:genShortCode(certId), certTypeId:certType.id, certTypeName:certType.name, listName:certType.listName,
+      values:{...values}, createdAt:Date.now(), createdDate:new Date().toISOString().slice(0,10),
+      issueDate:issueDateVal, issueYear:new Date(issueDateVal).getFullYear(),
+      teacherPhoto: teacherPhotoVal||null,
+      snapshot:{templateImage:mergedCertType.templateImage, labels:mergedCertType.labels, qr:mergedCertType.qr, idText:mergedCertType.idText, photo:mergedCertType.photo, issueDate:mergedCertType.issueDate, orientation:mergedCertType.orientation}
+    };
+
+    setGenerated(baseCert);
+    showToast('Rendering certificate…','i');
+
+    let node=null;
+    for(let i=0;i<20;i++){
+      node = printRef.current?.querySelector('.cert-frame');
+      if(node) break;
+      await new Promise(r=>setTimeout(r,50));
+    }
+
+    let certImageUrl=null;
+    if(node){
+      try{
+        await waitForImagesLoaded(node);
+        const canvas=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:'#ffffff'});
+        const dataUrl=canvas.toDataURL('image/png');
+        const cloudReady=window.CLOUDINARY_CONFIG.cloudName && window.CLOUDINARY_CONFIG.cloudName!=='YOUR_CLOUD_NAME';
+        if(cloudReady){
+          showToast('Uploading certificate image to Cloudinary…','i');
+          try{
+            certImageUrl=await window.uploadToCloudinary(dataUrl, window.CLOUDINARY_CONFIG.folder+'/certificates');
+            showToast('Certificate image uploaded ✓','s');
+          }catch(e){
+            showToast('Cloudinary upload failed — verify page will use live render instead: '+e.message,'w');
+          }
+        }else{
+          showToast('Cloudinary not configured — verify page will use live render instead','w');
+        }
+      }catch(e){
+        showToast('Could not capture certificate image: '+e.message,'w');
+      }
+    }
+
+    const finalCert={...baseCert, certImageUrl: certImageUrl||null};
+    setGenerated(finalCert);
+
+    showToast('Saving certificate to database…','i');
+    await onGenerated(finalCert);
+  };
+
+  const doPrint=()=>{ setPrintPageOrientation(certType.orientation); window.print(); };
+
+  const exportPdf=async()=>{
+    if(!generated) return;
+    showToast('Generating PDF…','i');
+    try{
+      const node=certRef.current;
+      const canvas=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:'#ffffff'});
+      const {jsPDF}=window.jspdf;
+      const isLand=(certType.orientation||'landscape')==='landscape';
+      const doc=new jsPDF({orientation:isLand?'landscape':'portrait',unit:'mm',format:'a4'});
+      const pw=doc.internal.pageSize.getWidth(), ph=doc.internal.pageSize.getHeight();
+      doc.addImage(canvas.toDataURL('image/jpeg',.95),'JPEG',0,0,pw,ph);
+      doc.save(`${generated.certId.replace(/\//g,'-')}.pdf`);
+      showToast('PDF saved ✓','s');
+    }catch(e){ showToast('PDF failed: '+e.message,'e'); }
+  };
+
+  const downloadImage=async()=>{
+  if(!generated) return;
+  try{
+    const node=printRef.current.querySelector('.cert-frame')||printRef.current;
+    const canvas=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:null,width:node.offsetWidth,height:node.offsetHeight});
+    canvas.toBlob((blob)=>{
+      if(!blob){ showToast('Download failed: empty image','e'); return; }
+      const url=URL.createObjectURL(blob);
+      const link=document.createElement('a'); link.download=`${generated.certId.replace(/\//g,'-')}.png`; link.href=url; link.click();
+      setTimeout(()=>URL.revokeObjectURL(url),4000);
+    },'image/png');
+  }catch(e){ showToast('Download failed: '+e.message,'e'); }
+};
+
+  const shareWhatsapp=async()=>{
+    if(!generated) return;
+    try{
+      const canvas=await html2canvas(printRef.current,{scale:2,useCORS:true,backgroundColor:'#ffffff'});
+      canvas.toBlob(async(blob)=>{
+        const file=new File([blob],`${generated.certId.replace(/\//g,'-')}.png`,{type:'image/png'});
+        if(navigator.canShare && navigator.canShare({files:[file]})){
+          try{ await navigator.share({files:[file],title:'Certificate',text:`Certificate ${generated.certId}`}); return; }catch(e){}
+        }
+        const link=document.createElement('a'); link.download=`${generated.certId.replace(/\//g,'-')}.png`; link.href=canvas.toDataURL('image/png'); link.click();
+        const msg=encodeURIComponent(`🏅 Certificate generated!\nID: ${generated.certId}\n(Attach the downloaded image in WhatsApp)`);
+        window.open(`https://wa.me/?text=${msg}`,'_blank');
+        showToast('Image downloaded — attach it in the WhatsApp chat that opened','i');
+      },'image/png');
+    }catch(e){ showToast('Share failed: '+e.message,'e'); }
+  };
+
+  return(
+    <div style={{display:'flex',gap:18,flexWrap:'wrap'}}>
+      <div style={{flex:'1 1 380px',minWidth:320}}>
+        <div style={{display:'flex',alignItems:'center',gap:9,marginBottom:4}}>
+          <button className="modal-back" onClick={onBack} title="Back to Types">←</button>
+          <div className="page-title" style={{marginBottom:0}}>Create Certificate</div>
+        </div>
+        <div className="page-sub">Pick a certificate type, fill in the details, then generate. A unique ID (TWS/{branchCode||'BR'}/{new Date().getFullYear()}/####) and QR code will be added automatically.</div>
+        <span className="f-lbl">1. Choose Category</span>
+        <select className="f-select" value={pickedCategory} onChange={e=>setPickedCategory(e.target.value)}>
+          {categories.map(cat=><option key={cat} value={cat}>{cat} ({certTypes.filter(c=>(c.listName||'Uncategorized')===cat).length})</option>)}
+        </select>
+        <span className="f-lbl">Issue Date</span>
+        <input className="f-input" type="date" value={issueDateVal} onChange={e=>setIssueDateVal(e.target.value)}/>
+
+        <span className="f-lbl">2. Choose Template</span>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(120px,1fr))',gap:8,marginBottom:14}}>
+          {typesInCat.map((ct,i)=>(
+            <div key={ct.id} onClick={()=>setPickedId(ct.id)}
+              style={{border:'2px solid',borderColor:pickedId===ct.id?'var(--gold)':'var(--bdr)',borderRadius:9,overflow:'hidden',cursor:'pointer',background:'#fff',boxShadow:pickedId===ct.id?'0 4px 16px rgba(143,106,46,.3)':'0 1px 4px rgba(0,0,0,.06)',transition:'all .15s',position:'relative'}}>
+              {pickedId===ct.id && <div style={{position:'absolute',top:4,right:4,background:'var(--gold)',color:'#fff',borderRadius:'50%',width:18,height:18,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:800,zIndex:2}}>✓</div>}
+              <img src={ct.templateImage} alt={ct.name} style={{width:'100%',height:74,objectFit:'cover',display:'block',background:'#ece3d0'}}/>
+              <div style={{padding:'5px 7px'}}>
+                <div style={{fontSize:10,fontWeight:800,color:'var(--navy)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>Template {i+1}</div>
+                <div style={{fontSize:8.5,color:'var(--tx3)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{ct.name}</div>
+              </div>
+            </div>
+          ))}
+          {!typesInCat.length && <div style={{fontSize:10.5,color:'var(--tx3)',padding:'10px 0'}}>No templates in this category.</div>}
+        </div>
+        {certType?.photo?.perCertificate && (
+          <div style={{maxWidth:300,marginBottom:14}}>
+            <span className="f-lbl">Teacher Photo</span>
+            <label className="btn btn-ghost btn-sm" style={{cursor:'pointer',display:'inline-block',margin:0}}>
+              {teacherPhotoVal?'🔁 Replace Photo':'⬆ Upload Photo'}
+              <input type="file" accept="image/*" style={{display:'none'}}
+                onChange={async(e)=>{
+                  const f=e.target.files[0]; e.target.value='';
+                  if(!f||!f.type.match(/image\//)){ showToast('Please choose an image file (jpg/png/etc.)','e'); return; }
+                  const reader=new FileReader();
+                  reader.onload=async(ev)=>{
+                    let img=ev.target.result;
+                    const cloudReady=window.CLOUDINARY_CONFIG.cloudName&&window.CLOUDINARY_CONFIG.cloudName!=='YOUR_CLOUD_NAME';
+                    if(cloudReady){
+                      try{ img=await window.uploadToCloudinary(img, window.CLOUDINARY_CONFIG.folder+'/photos'); }
+                      catch(err){ showToast('Cloud upload failed, using local image: '+err.message,'w'); }
+                    }
+                    setTeacherPhotoVal(img);
+                  };
+                  reader.readAsDataURL(f);
+                }}/>
+            </label>
+            {teacherPhotoVal && <img src={teacherPhotoVal} alt="" style={{display:'block',marginTop:6,maxHeight:80,borderRadius:6}}/>}
+          </div>
+        )}
+        {certType && (
+          <div className="form-grid" style={{marginTop:10}}>
+            {(certType.labels||[]).map(l=>{
+  if(l.type==='image'){
+    return (
+      <div className="form-field" key={l.id}>
+        <label>🖼 {l.label}</label>
+        <label className="btn btn-ghost btn-sm" style={{cursor:'pointer',display:'inline-block',margin:0}}>
+          {values[l.key]?'🔁 Replace Photo':'⬆ Upload Photo'}
+          <input type="file" accept="image/*" style={{display:'none'}}
+            onChange={async(e)=>{
+              const f=e.target.files[0]; e.target.value='';
+              if(!f||!f.type.match(/image\//)){ showToast('Please choose an image file (jpg/png/etc.)','e'); return; }
+              const reader=new FileReader();
+              reader.onload=async(ev)=>{
+                let img=ev.target.result;
+                const cloudReady=window.CLOUDINARY_CONFIG.cloudName&&window.CLOUDINARY_CONFIG.cloudName!=='YOUR_CLOUD_NAME';
+                if(cloudReady){
+                  try{ img=await window.uploadToCloudinary(img, window.CLOUDINARY_CONFIG.folder+'/photos'); }
+                  catch(err){ showToast('Cloud upload failed, using local image: '+err.message,'w'); }
+                }
+                setVal(l.key,img);
+              };
+              reader.readAsDataURL(f);
+            }}/>
+        </label>
+        {values[l.key] && <img src={values[l.key]} alt="" style={{display:'block',marginTop:6,maxHeight:70,borderRadius:6}}/>}
+      </div>
+    );
+  }
+  return (
+    <div className="form-field" key={l.id}>
+      <label>{l.type==='date'?'📅 ':''}{l.label}</label>
+      <input type={l.type==='date'?'date':'text'} value={values[l.key]||''} onChange={e=>setVal(l.key,e.target.value)} placeholder={l.type==='date'?'':`Enter ${l.label}`}/>
+    </div>
+  );
+})}
+          </div>
+        )}
+        <div style={{display:'flex',gap:8,marginTop:6,flexWrap:'wrap'}}>
+          <button className="btn btn-gold" onClick={generate}>🏅 Generate Certificate</button>
+          <button className="btn btn-navy" onClick={()=>setShowBulk(true)} disabled={!certType}>📊 Bulk Generate (Excel)</button>
+          {generated && <>
+            <button className="btn btn-navy" onClick={doPrint}>🖨 Print (A4)</button>
+            <button className="btn btn-navy" onClick={exportPdf}>📄 Save as PDF</button>
+            <button className="btn btn-ghost" onClick={downloadImage}>🖼 Download PNG</button>
+            <button className="btn btn-wa" onClick={shareWhatsapp}>💬 Share on WhatsApp</button>
+          </>}
+        </div>
+        {generated && <div style={{marginTop:10,fontSize:10.5,color:'var(--tx2)'}}>Unique ID: <span className="hist-id">{generated.certId}</span></div>}
+      </div>
+
+      <div style={{flex:'1 1 420px',minWidth:320}}>
+        <div className="page-sub" style={{marginBottom:6}}>Click any text, the photo box, or the QR block to nudge it for <strong>this certificate only</strong> — the saved template stays untouched.</div>
+        <div className="cert-outer" onClick={()=>setSelected(null)}>
+          <div ref={certRef}>
+            <CertificateView certType={mergedCertType} values={values} certId={generated?.certId||''} scale={0.55} selectedLabelId={selected} onSelectLabel={setSelected} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} interactive={true} issueDate={issueDateVal} teacherPhoto={teacherPhotoVal}/>
+          </div>
+        </div>
+        {Object.keys(overrides).length>0 && <button className="btn btn-ghost btn-sm" style={{marginTop:8}} onClick={resetOverrides}>↺ Reset Adjustments</button>}
+      </div>
+
+      <div className="side" style={{position:'static',boxShadow:'none',border:'1px solid var(--bdr)',borderRadius:10,flex:'0 0 280px'}}>
+        <div className="side-hdr">⚙ Adjust This Certificate</div>
+        <div className="side-body">
+          {!selected && <div style={{fontSize:11,color:'var(--tx3)',padding:'20px 6px',textAlign:'center'}}>Select a label, ID text, photo box, or QR block above to adjust it for this certificate only.</div>}
+
+          {selected && certType && (certType.labels||[]).find(l=>l.id===selected) && (()=>{
+            const baseLbl=(certType.labels||[]).find(l=>l.id===selected);
+            const curStyle={...baseLbl.style,...(overrides[selected]||{})};
+            return(
+              <div className="dz-sec">
+                <div className="dz-sec-hdr">✏️ {baseLbl.label}</div>
+                <div className="dz-sec-body">
+                  <XY x={curStyle.x||0} y={curStyle.y||0} onX={v=>updateOverrideLabel(selected,{x:v})} onY={v=>updateOverrideLabel(selected,{y:v})} onReset={()=>updateOverrideLabel(selected,{x:baseLbl.style.x||0,y:baseLbl.style.y||0})}/>
+                  <SliderRow label="Size" val={curStyle.fontSize||16} min={8} max={72} onChange={v=>updateOverrideLabel(selected,{fontSize:v})} unit="px"/>
+                  <div className="sld-row"><span className="sld-lbl">Color</span><input type="color" value={curStyle.color||'#1c2430'} onChange={e=>updateOverrideLabel(selected,{color:e.target.value})}/></div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {selected==='__idtext__' && certType && (()=>{
+            const cur={...(certType.idText||DEFAULT_IDTEXT),...(overrides.__idtext__||{})};
+            return(
+              <div className="dz-sec">
+                <div className="dz-sec-hdr">🪪 Certificate ID Text</div>
+                <div className="dz-sec-body">
+                  <XY x={cur.x||0} y={cur.y||0} onX={v=>updateOverrideIdText({x:v})} onY={v=>updateOverrideIdText({y:v})}/>
+                  <SliderRow label="Size" val={cur.fontSize||9} min={6} max={22} onChange={v=>updateOverrideIdText({fontSize:v})} unit="px"/>
+                </div>
+              </div>
+            );
+          })()}
+          
+          {selected==='__issue__' && certType && (()=>{
+            const cur={...(certType.issueDate||DEFAULT_ISSUE),...(overrides.__issue__||{})};
+            return(
+              <div className="dz-sec">
+                <div className="dz-sec-hdr">📅 Issue Date</div>
+                <div className="dz-sec-body">
+                  <XY x={cur.x||0} y={cur.y||0} onX={v=>setOverrides(p=>({...p,__issue__:{...p.__issue__,x:v}}))} onY={v=>setOverrides(p=>({...p,__issue__:{...p.__issue__,y:v}}))}/>
+                  <SliderRow label="Size" val={cur.fontSize||9} min={6} max={22} onChange={v=>setOverrides(p=>({...p,__issue__:{...p.__issue__,fontSize:v}}))} unit="px"/>
+                </div>
+              </div>
+            );
+          })()}
+
+          {selected==='__qr__' && certType && (()=>{
+            const cur={...(certType.qr||DEFAULT_QR),...(overrides.__qr__||{})};
+            return(
+              <div className="dz-sec">
+                <div className="dz-sec-hdr">▦ QR Code</div>
+                <div className="dz-sec-body">
+                  <SliderRow label="Size" val={cur.size||70} min={30} max={180} onChange={v=>updateOverrideQr({size:v})} unit="px"/>
+                  <XY x={cur.x||0} y={cur.y||0} onX={v=>updateOverrideQr({x:v})} onY={v=>updateOverrideQr({y:v})} onReset={()=>updateOverrideQr({x:0,y:0})}/>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      </div>
+
+      {generated && (
+        <div id="print-target" ref={printRef}>
+          <CertificateView certType={mergedCertType} values={values} certId={generated.certId} scale={1} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} issueDate={issueDateVal} teacherPhoto={teacherPhotoVal}/>
+        </div>
+      )}
+      {showBulk && <BulkGenerateModal certType={certType} branchCode={branchCode} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} onGenerated={onGenerated} onClose={()=>setShowBulk(false)}/>}
+    </div>
+  );
+}
+
+/* ============================ HISTORY TAB ============================ */
+function HistoryTab({certificates,certTypes,fbOk,onRefresh,onView,onEdit,onDelete,verifyBaseUrl,verifyParam}){
+  const [search,setSearch]=useState('');
+  const [flist,setFlist]=useState('');
+  const [fdateFrom,setFdateFrom]=useState('');
+  const [fdateTo,setFdateTo]=useState('');
+  const [collapsed,setCollapsed]=useState({});
+  const [selectedIds,setSelectedIds]=useState(new Set());
+  const [bulkBusy,setBulkBusy]=useState(false);
+  const [bulkPreview,setBulkPreview]=useState(null);
+  const [singleBusyId,setSingleBusyId]=useState(null);
+  const hiddenRef=useRef();
+
+  const filtered=useMemo(()=>{
+    let r=[...certificates];
+    const q=search.toLowerCase();
+    if(q) r=r.filter(c=>c.certId.toLowerCase().includes(q)||Object.values(c.values||{}).some(v=>String(v).toLowerCase().includes(q)));
+    if(flist) r=r.filter(c=>c.listName===flist);
+    if(fdateFrom) r=r.filter(c=>c.createdDate>=fdateFrom);
+    if(fdateTo) r=r.filter(c=>c.createdDate<=fdateTo);
+    r.sort((a,b)=>b.createdAt-a.createdAt);
+    return r;
+  },[certificates,search,flist,fdateFrom,fdateTo]);
+  const lists=[...new Set(certificates.map(c=>c.listName).filter(Boolean))];
+
+  const grouped=useMemo(()=>{
+    const g={};
+    filtered.forEach(c=>{
+      const key=c.listName||'Uncategorized';
+      if(!g[key]) g[key]=[];
+      g[key].push(c);
+    });
+    return Object.entries(g).sort((a,b)=>b[1].length-a[1].length);
+  },[filtered]);
+
+  const toggleCat=(key)=>setCollapsed(p=>({...p,[key]:!p[key]}));
+
+  const fieldPairs=(c)=>{
+    const ct=c.snapshot||certTypes.find(t=>t.id===c.certTypeId);
+    const labels=ct?.labels||[];
+    if(!labels.length) return Object.entries(c.values||{}).slice(0,3);
+    return labels.slice(0,3).map(l=>[l.label, l.type==='date'?fmtDate(c.values?.[l.key]):(c.values?.[l.key]||'—')]);
+  };
+
+  const toggleSelect=(certId)=>setSelectedIds(prev=>{
+    const n=new Set(prev);
+    if(n.has(certId)) n.delete(certId); else n.add(certId);
+    return n;
+  });
+  const selectAllInList=(certsInList,checked)=>setSelectedIds(prev=>{
+    const n=new Set(prev);
+    certsInList.forEach(c=>{ if(checked) n.add(c.certId); else n.delete(c.certId); });
+    return n;
+  });
+  const clearSelection=()=>setSelectedIds(new Set());
+
+  const captureCertCanvas=async(cert)=>{
+    const ct=cert.snapshot||certTypes.find(t=>t.id===cert.certTypeId);
+    if(!ct) return null;
+    setBulkPreview({cert,ct});
+    await new Promise(r=>setTimeout(r,60));
+    let node=null;
+    for(let i=0;i<20;i++){ node=hiddenRef.current?.querySelector('.cert-frame'); if(node) break; await new Promise(r=>setTimeout(r,50)); }
+    if(!node) return null;
+    try{
+      await waitForImagesLoaded(node);
+      const canvas=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:'#ffffff'});
+      return {canvas,ct};
+    }catch(e){ return null; }
+  };
+
+  const safeFileName=(certId)=>certId.replace(/\//g,'-');
+
+  const downloadSingleImage=async(cert)=>{
+    setSingleBusyId(cert.certId);
+    showToast(`Rendering ${cert.certId}…`,'i');
+    const result=await captureCertCanvas(cert);
+    setBulkPreview(null); setSingleBusyId(null);
+    if(!result){ showToast('Could not render this certificate','e'); return; }
+    result.canvas.toBlob((blob)=>{
+      if(!blob){ showToast('Download failed: empty image','e'); return; }
+      const url=URL.createObjectURL(blob);
+      const link=document.createElement('a'); link.download=`${safeFileName(cert.certId)}.png`; link.href=url; link.click();
+      setTimeout(()=>URL.revokeObjectURL(url),4000);
+      showToast('Image downloaded ✓','s');
+    },'image/png');
+  };
+
+  const downloadSinglePdf=async(cert)=>{
+    if(!window.jspdf){ showToast('PDF engine still loading — try again','w'); return; }
+    setSingleBusyId(cert.certId);
+    showToast(`Rendering ${cert.certId}…`,'i');
+    const result=await captureCertCanvas(cert);
+    setBulkPreview(null); setSingleBusyId(null);
+    if(!result){ showToast('Could not render this certificate','e'); return; }
+    try{
+      const {jsPDF}=window.jspdf;
+      const isLand=(result.ct.orientation||'landscape')==='landscape';
+      const doc=new jsPDF({orientation:isLand?'landscape':'portrait',unit:'mm',format:'a4'});
+      const pw=doc.internal.pageSize.getWidth(), ph=doc.internal.pageSize.getHeight();
+      doc.addImage(result.canvas.toDataURL('image/jpeg',.95),'JPEG',0,0,pw,ph);
+      doc.save(`${safeFileName(cert.certId)}.pdf`);
+      showToast('PDF saved ✓','s');
+    }catch(e){ showToast('PDF failed: '+e.message,'e'); }
+  };
+
+  const downloadSelectedImages=async()=>{
+    if(!selectedIds.size){ showToast('Select at least one certificate first','w'); return; }
+    if(!window.JSZip){ showToast('Zip engine still loading — try again in a moment','w'); return; }
+    setBulkBusy(true);
+    showToast(`Preparing ${selectedIds.size} image(s)…`,'i');
+    const zip=new JSZip();
+    const selectedCerts=certificates.filter(c=>selectedIds.has(c.certId));
+    let done=0;
+    for(const cert of selectedCerts){
+      const result=await captureCertCanvas(cert);
+      if(result){
+        const dataUrl=result.canvas.toDataURL('image/png');
+        zip.file(`${safeFileName(cert.certId)}.png`, dataUrl.split(',')[1], {base64:true});
+        done++;
+      }
+    }
+    setBulkPreview(null);
+    if(!done){ setBulkBusy(false); showToast('Could not render any selected certificates','e'); return; }
+    try{
+      const blob=await zip.generateAsync({type:'blob'});
+      const url=URL.createObjectURL(blob);
+      const link=document.createElement('a'); link.download=`certificates_${Date.now()}.zip`; link.href=url; link.click();
+      setTimeout(()=>URL.revokeObjectURL(url),4000);
+      showToast(`Downloaded ${done} image(s) as ZIP ✓`,'s');
+    }catch(e){ showToast('Zip failed: '+e.message,'e'); }
+    setBulkBusy(false);
+  };
+
+  const downloadSelectedPdf=async()=>{
+    if(!selectedIds.size){ showToast('Select at least one certificate first','w'); return; }
+    if(!window.jspdf){ showToast('PDF engine still loading — try again in a moment','w'); return; }
+    setBulkBusy(true);
+    showToast(`Preparing PDF for ${selectedIds.size} certificate(s)…`,'i');
+    const {jsPDF}=window.jspdf;
+    let doc=null;
+    const selectedCerts=certificates.filter(c=>selectedIds.has(c.certId));
+    let done=0;
+    for(const cert of selectedCerts){
+      const result=await captureCertCanvas(cert);
+      if(!result) continue;
+      const isLand=(result.ct.orientation||'landscape')==='landscape';
+      if(!doc) doc=new jsPDF({orientation:isLand?'landscape':'portrait',unit:'mm',format:'a4'});
+      else doc.addPage('a4', isLand?'landscape':'portrait');
+      const pw=doc.internal.pageSize.getWidth(), ph=doc.internal.pageSize.getHeight();
+      doc.addImage(result.canvas.toDataURL('image/jpeg',.95),'JPEG',0,0,pw,ph);
+      done++;
+    }
+    setBulkPreview(null);
+    if(!doc||!done){ setBulkBusy(false); showToast('Could not render any selected certificates','e'); return; }
+    doc.save(`certificates_${Date.now()}.pdf`);
+    showToast(`Downloaded PDF with ${done} certificate(s) ✓`,'s');
+    setBulkBusy(false);
+  };
+
+  return(
+    <div>
+      <div className="page-title">Certificate History</div>
+      <div className="page-sub">Certificates grouped by type. Search, filter by date range, view, edit, or bulk-download as images/PDF.</div>
+      <div className="filter-bar">
+        <input placeholder="🔍 Search name, ID…" value={search} onChange={e=>setSearch(e.target.value)}/>
+        <select value={flist} onChange={e=>setFlist(e.target.value)}><option value="">All Categories</option>{lists.map(l=><option key={l} value={l}>{l}</option>)}</select>
+        <input type="date" value={fdateFrom} onChange={e=>setFdateFrom(e.target.value)} title="From date"/>
+        <input type="date" value={fdateTo} onChange={e=>setFdateTo(e.target.value)} title="To date"/>
+        {(search||flist||fdateFrom||fdateTo)&&<button className="btn btn-ghost btn-sm" onClick={()=>{setSearch('');setFlist('');setFdateFrom('');setFdateTo('');}}>✕ Clear</button>}
+        <button className="btn btn-navy btn-sm" onClick={onRefresh} disabled={!fbOk} style={{marginLeft:'auto'}}>📥 Reload from Firebase</button>
+      </div>
+
+      {selectedIds.size>0 && (
+        <div style={{display:'flex',alignItems:'center',gap:8,background:'#fbf1d8',border:'1.5px solid var(--gold)',borderRadius:8,padding:'8px 12px',marginBottom:14,flexWrap:'wrap'}}>
+          <span style={{fontSize:11,fontWeight:800,color:'var(--navy)'}}>{selectedIds.size} selected</span>
+          <button className="btn btn-navy btn-sm" onClick={downloadSelectedImages} disabled={bulkBusy}>{bulkBusy?'Working…':'🖼 Download Images (ZIP)'}</button>
+          <button className="btn btn-navy btn-sm" onClick={downloadSelectedPdf} disabled={bulkBusy}>{bulkBusy?'Working…':'📄 Download PDF (Combined)'}</button>
+          <button className="btn btn-ghost btn-sm" onClick={clearSelection} disabled={bulkBusy}>✕ Clear Selection</button>
+        </div>
+      )}
+
+      {!filtered.length ? (
+        <div style={{textAlign:'center',padding:'40px 0',color:'var(--tx2)'}}>
+          <div style={{fontSize:40,marginBottom:8}}>📜</div>
+          <div style={{fontFamily:'Cinzel,serif',fontSize:16,fontWeight:700,color:'var(--navy)'}}>No certificates found</div>
+        </div>
+      ) : (
+        grouped.map(([catName,certs])=>{
+          const isCollapsed=!!collapsed[catName];
+          const allSelected=certs.every(c=>selectedIds.has(c.certId));
+          return(
+            <div className="cat-section" key={catName}>
+              <div className="cat-hdr">
+                <span style={{fontSize:14,color:'var(--tx2)',cursor:'pointer'}} onClick={()=>toggleCat(catName)}>{isCollapsed?'▸':'▾'}</span>
+                <h3 style={{flex:1,cursor:'pointer'}} onClick={()=>toggleCat(catName)}>🏅 {catName}</h3>
+                <label style={{display:'flex',alignItems:'center',gap:5,fontSize:9.5,fontWeight:700,color:'var(--tx2)',cursor:'pointer'}}>
+                  <input type="checkbox" checked={allSelected} onChange={e=>selectAllInList(certs,e.target.checked)}/> Select All
+                </label>
+                <span className="cat-count">{certs.length} certificate{certs.length!==1?'s':''}</span>
+              </div>
+              {!isCollapsed && (
+                <div className="hist-grid">
+                  {certs.map(c=>{
+                    const ct=c.snapshot||certTypes.find(t=>t.id===c.certTypeId);
+                    const pairs=fieldPairs(c);
+                    const busy=singleBusyId===c.certId;
+                    return(
+                      <div className="hist-card" key={c.certId} style={{position:'relative'}}>
+                        <label style={{position:'absolute',top:10,right:10,cursor:'pointer'}}>
+                          <input type="checkbox" checked={selectedIds.has(c.certId)} onChange={()=>toggleSelect(c.certId)}/>
+                        </label>
+                        <div className="hist-name">{ct?.name||c.certTypeName||'Certificate'}</div>
+                        <div className="hist-meta">
+                          {pairs.map(([lbl,val])=>(<div key={lbl}><strong style={{color:'var(--navy)'}}>{lbl}:</strong> {val||'—'}</div>))}
+                          <div style={{marginTop:4,color:'var(--tx3)'}}>{new Date(c.createdAt).toLocaleString()}</div>
+                        </div>
+                        <div className="hist-id">{c.certId}</div>
+                        <div style={{display:'flex',gap:5,marginTop:9,flexWrap:'wrap'}}>
+                          <button className="btn btn-navy btn-xs" onClick={()=>onView(c)}>👁 View / Print</button>
+                          <button className="btn btn-grn btn-xs" onClick={()=>onEdit(c)}>✏️ Edit</button>
+                          <button className="btn btn-ghost btn-xs" onClick={()=>downloadSingleImage(c)} disabled={busy}>{busy?'…':'🖼 PNG'}</button>
+                          <button className="btn btn-ghost btn-xs" onClick={()=>downloadSinglePdf(c)} disabled={busy}>{busy?'…':'📄 PDF'}</button>
+                          <button className="btn btn-red btn-xs" onClick={()=>onDelete(c.certId)}>🗑</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
+      {bulkPreview && (
+        <div style={{position:'absolute',left:-99999,top:0,pointerEvents:'none'}} ref={hiddenRef}>
+          <CertificateView certType={bulkPreview.ct} values={bulkPreview.cert.values} certId={bulkPreview.cert.certId} scale={1} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam}/>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================ VIEW / REPRINT MODAL ============================ */
+function ViewCertModal({cert,certTypes,onClose,verifyBaseUrl,verifyParam}){
+ const ct=cert.snapshot||certTypes.find(t=>t.id===cert.certTypeId);
+  const ref=useRef();
+  const printRef=useRef();
+  useEffect(()=>{ if(ct) setPrintPageOrientation(ct.orientation); },[ct]);
+  const doPrint=()=>{ if(ct) setPrintPageOrientation(ct.orientation); window.print(); };
+  const exportPdf=async()=>{
+    try{
+      const canvas=await html2canvas(printRef.current,{scale:2,useCORS:true,backgroundColor:'#fff'});
+      const {jsPDF}=window.jspdf;
+      const isLand=(ct?.orientation||'landscape')==='landscape';
+      const doc=new jsPDF({orientation:isLand?'landscape':'portrait',unit:'mm',format:'a4'});
+      const pw=doc.internal.pageSize.getWidth(), ph=doc.internal.pageSize.getHeight();
+      doc.addImage(canvas.toDataURL('image/jpeg',.95),'JPEG',0,0,pw,ph);
+      doc.save(`${cert.certId.replace(/\//g,'-')}.pdf`);
+    }catch(e){ showToast('PDF failed: '+e.message,'e'); }
+  };
+  const downloadImage=async()=>{
+  try{
+    const node=printRef.current.querySelector('.cert-frame')||printRef.current;
+    const canvas=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:null,width:node.offsetWidth,height:node.offsetHeight});
+    canvas.toBlob((blob)=>{
+      if(!blob){ showToast('Download failed: empty image','e'); return; }
+      const url=URL.createObjectURL(blob);
+      const link=document.createElement('a'); link.download=`${cert.certId.replace(/\//g,'-')}.png`; link.href=url; link.click();
+      setTimeout(()=>URL.revokeObjectURL(url),4000);
+    },'image/png');
+  }catch(e){ showToast('Download failed: '+e.message,'e'); }
+};
+  const shareWhatsapp=async()=>{
+    try{
+      const canvas=await html2canvas(printRef.current,{scale:2,useCORS:true,backgroundColor:'#fff'});
+      canvas.toBlob(async(blob)=>{
+        const file=new File([blob],`${cert.certId.replace(/\//g,'-')}.png`,{type:'image/png'});
+        if(navigator.canShare&&navigator.canShare({files:[file]})){ try{await navigator.share({files:[file],title:'Certificate'});return;}catch(e){} }
+        const link=document.createElement('a'); link.download=`${cert.certId.replace(/\//g,'-')}.png`; link.href=canvas.toDataURL('image/png'); link.click();
+        window.open(`https://wa.me/?text=${encodeURIComponent('Certificate '+cert.certId)}`,'_blank');
+      },'image/png');
+    }catch(e){ showToast('Share failed','e'); }
+  };
+  if(!ct) return (<div className="modal-bg" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}><h3>⚠ Template Missing</h3><p style={{fontSize:11,color:'var(--tx2)'}}>The certificate type for this record was deleted.</p><button className="btn btn-ghost" onClick={onClose}>Close</button></div></div>);
+  return(
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" style={{maxWidth:760}} onClick={e=>e.stopPropagation()}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+          <h3 style={{marginBottom:0}}>👁 {cert.certId}</h3>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>✕ Close</button>
+        </div>
+        <div className="cert-outer" ref={ref}>
+          <CertificateView certType={ct} values={cert.values} certId={cert.certId} scale={0.5} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} issueDate={cert.issueDate} teacherPhoto={cert.teacherPhoto}/>
+        </div>
+        <div style={{display:'flex',gap:8,marginTop:12,flexWrap:'wrap'}}>
+          <button className="btn btn-navy" onClick={doPrint}>🖨 Print</button>
+          <button className="btn btn-navy" onClick={exportPdf}>📄 Save as PDF</button>
+          <button className="btn btn-ghost" onClick={downloadImage}>🖼 Download PNG</button>
+          <button className="btn btn-wa" onClick={shareWhatsapp}>💬 WhatsApp</button>
+        </div>
+        <div id="print-target" ref={printRef}>
+          <CertificateView certType={ct} values={cert.values} certId={cert.certId} scale={1} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} issueDate={cert.issueDate}/>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ EDIT CERTIFICATE MODAL ============================ */
+function EditCertModal({cert,certTypes,onClose,onSaved,fbOk,activeBranch,activeSession,verifyBaseUrl,verifyParam}){
+  const ct=cert.snapshot||certTypes.find(t=>t.id===cert.certTypeId);
+  const [values,setValues]=useState({...cert.values});
+  const [saving,setSaving]=useState(false);
+  const printRef=useRef();
+  if(!ct) return (<div className="modal-bg" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}><h3>⚠ Template Missing</h3><p style={{fontSize:11,color:'var(--tx2)'}}>Cannot edit — original template data is missing.</p><button className="btn btn-ghost" onClick={onClose}>Close</button></div></div>);
+
+  const setVal=(key,v)=>setValues(p=>({...p,[key]:v}));
+
+  const save=async()=>{
+    const missing=(ct.labels||[]).filter(l=>!values[l.key]?.trim());
+    if(missing.length){ showToast(`Fill: ${missing.map(m=>m.label).join(', ')}`,'w'); return; }
+    setSaving(true);
+    showToast('Re-rendering certificate…','i');
+
+    let node=null;
+    for(let i=0;i<20;i++){
+      node = printRef.current?.querySelector('.cert-frame');
+      if(node) break;
+      await new Promise(r=>setTimeout(r,50));
+    }
+
+    let newImageUrl=cert.certImageUrl||null;
+    const cloudReady=window.CLOUDINARY_CONFIG.cloudName && window.CLOUDINARY_CONFIG.cloudName!=='YOUR_CLOUD_NAME';
+    if(node){
+      try{
+        await waitForImagesLoaded(node);
+        const canvas=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:'#ffffff'});
+        const dataUrl=canvas.toDataURL('image/png');
+        if(cloudReady){
+          showToast('Uploading updated certificate image…','i');
+          newImageUrl=await window.uploadToCloudinary(dataUrl, window.CLOUDINARY_CONFIG.folder+'/certificates');
+          showToast('New certificate image uploaded ✓','s');
+        }
+      }catch(e){
+        showToast('Could not re-render image: '+e.message,'w');
+      }
+    }
+
+    const updatedCert={...cert, values:{...values}, certImageUrl:newImageUrl, updatedAt:Date.now()};
+
+    if(fbOk&&window.fbSaveCertificate){
+      try{
+        await window.fbSaveCertificate(updatedCert,activeBranch,activeSession);
+        showToast('Certificate updated ✓','s');
+      }catch(e){
+        showToast('Update failed to save: '+e.message,'e');
+      }
+    }else{
+      showToast('Firebase not connected — change kept locally only','w');
+    }
+
+    setSaving(false);
+    onSaved(updatedCert);
+  };
+
+  return(
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" style={{maxWidth:760}} onClick={e=>e.stopPropagation()}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+          <h3 style={{marginBottom:0}}>✏️ Edit {cert.certId}</h3>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>✕ Close</button>
+        </div>
+        <div className="form-grid">
+          {(ct.labels||[]).map(l=>{
+            if(l.type==='image'){
+              return (
+                <div className="form-field" key={l.id}>
+                  <label>🖼 {l.label}</label>
+                  <label className="btn btn-ghost btn-sm" style={{cursor:'pointer',display:'inline-block',margin:0}}>
+                    {values[l.key]?'🔁 Replace Photo':'⬆ Upload Photo'}
+                    <input type="file" accept="image/*" style={{display:'none'}}
+                      onChange={async(e)=>{
+                        const f=e.target.files[0]; e.target.value='';
+                        if(!f||!f.type.match(/image\//)){ showToast('Please choose an image file','e'); return; }
+                        const reader=new FileReader();
+                        reader.onload=async(ev)=>{
+                          let img=ev.target.result;
+                          const cloudReady=window.CLOUDINARY_CONFIG.cloudName&&window.CLOUDINARY_CONFIG.cloudName!=='YOUR_CLOUD_NAME';
+                          if(cloudReady){
+                            try{ img=await window.uploadToCloudinary(img, window.CLOUDINARY_CONFIG.folder+'/photos'); }
+                            catch(err){ showToast('Cloud upload failed, using local image: '+err.message,'w'); }
+                          }
+                          setVal(l.key,img);
+                        };
+                        reader.readAsDataURL(f);
+                      }}/>
+                  </label>
+                  {values[l.key] && <img src={values[l.key]} alt="" style={{display:'block',marginTop:6,maxHeight:70,borderRadius:6}}/>}
+                </div>
+              );
+            }
+            return (
+              <div className="form-field" key={l.id}>
+                <label>{l.type==='date'?'📅 ':''}{l.label}</label>
+                <input type={l.type==='date'?'date':'text'} value={values[l.key]||''} onChange={e=>setVal(l.key,e.target.value)}/>
+              </div>
+            );
+          })}
+        </div>
+        <div className="cert-outer" style={{marginTop:10}}>
+          <CertificateView certType={ct} values={values} certId={cert.certId} scale={0.45} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} issueDate={cert.issueDate}/>
+        </div>
+        <div style={{display:'flex',gap:8,marginTop:12}}>
+          <button className="btn btn-gold" onClick={save} disabled={saving}>{saving?'Saving…':'💾 Save Changes'}</button>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        </div>
+        <div id="print-target" ref={printRef}>
+          <CertificateView certType={ct} values={values} certId={cert.certId} scale={1} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} issueDate={cert.issueDate}/>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ VERIFY PAGE(QR scan target — in-app fallback) ============================
+   This runs only when CERT_WORKER_CONFIG.url is blank. Once your worker.js
+   is deployed, QR codes will point to it instead and this overlay won't be used. */
+function VerifyOverlay({certId,certTypes,branchName,onClose,fbOk,activeBranch,activeSession}){
+  const [cert,setCert]=useState(undefined); // undefined=loading, null=not found
+  useEffect(()=>{
+    (async()=>{
+      if(!fbOk){ setCert(null); return; }
+            try{
+        let c=null;
+        if(activeBranch&&activeSession&&window.fbGetCertificateByShortCode) c=await window.fbGetCertificateByShortCode(certId,activeBranch,activeSession);
+        if(!c&&window.fbGetCertificateByShortCodeGlobal) c=await window.fbGetCertificateByShortCodeGlobal(certId);
+        setCert(c||null);
+      }catch(e){ setCert(null); }
+    })();
+  },[certId,fbOk]);
+  const ct = cert ? (cert.snapshot||certTypes.find(t=>t.id===cert.certTypeId)) : null;
+  const now=new Date();
+  const primaryName = cert ? (Object.entries(cert.values||{}).find(([k])=>k.toUpperCase().includes('NAME'))?.[1] || Object.values(cert.values||{})[0] || '') : '';
+  if(cert===undefined) return(<div className="verify-overlay"><button className="verify-close" onClick={onClose}>✕</button><div className="verify-card" style={{padding:40,textAlign:'center'}}><div style={{fontSize:30}}>⏳</div><div style={{fontWeight:700,marginTop:8}}>Verifying…</div></div></div>);
+  if(!cert) return(
+    <div className="verify-overlay">
+      <button className="verify-close" onClick={onClose}>✕</button>
+      <div className="verify-card">
+        <div className="verify-hdr"><div style={{display:'inline-flex',alignItems:'center',gap:7,background:'linear-gradient(135deg,#7f1d1d,#c23b3b)',color:'#fff',padding:'7px 18px',borderRadius:50,fontSize:12,fontWeight:800}}>✗ NOT FOUND</div></div>
+        <div style={{padding:26,textAlign:'center'}}><div style={{fontSize:42}}>❌</div><div style={{fontFamily:'Cinzel,serif',fontSize:17,fontWeight:800,color:'var(--red)',marginTop:8}}>No certificate found for ID</div><div className="hist-id" style={{marginTop:6}}>{certId}</div></div>
+      </div>
+    </div>
+  );
+  return(
+    <div className="verify-overlay">
+      <button className="verify-close" onClick={onClose}>✕</button>
+      <div className="verify-card">
+        <div className="verify-hdr">
+          <div className="verify-badge">✓ VERIFIED CERTIFICATE</div>
+          <div style={{color:'#fff',fontFamily:'Cinzel,serif',fontWeight:700,fontSize:14}}>{cert.listName}</div>
+          <div style={{color:'rgba(255,255,255,.65)',fontSize:10.5,marginTop:4}}>Issued &amp; verified by <strong style={{color:'#fff'}}>{branchName||'Teachers Welfare Society'}</strong></div>
+        </div>
+        <div style={{padding:18}}>
+          {ct && <div className="cert-outer" style={{marginBottom:12}}><CertificateView certType={ct} values={cert.values} certId={cert.certId} scale={0.55} verifyBaseUrl={''}/></div>}
+          <div className="verify-name-banner">
+            <div className="vnb-name">{primaryName || 'Certificate Holder'}</div>
+            <div className="vnb-sub">✅ has a VALID certificate</div>
+          </div>
+          <div className="verify-grid" style={{marginTop:12}}>
+            {Object.entries(cert.values||{}).map(([k,v])=>{
+              const lbl=(ct?.labels||[]).find(l=>l.key===k);
+              const dv = lbl?.type==='date' ? fmtDate(v) : v;
+              return(<div className="verify-field" key={k}><div className="verify-field-lbl">{k.replace(/_/g,' ')}</div><div className="verify-field-val">{dv||'—'}</div></div>);
+            })}
+          </div>
+          <div style={{textAlign:'center',fontSize:9.5,color:'var(--tx3)',marginTop:10}}>Certificate ID: {cert.certId}<br/>Issued: {new Date(cert.createdAt).toLocaleDateString()} · Checked: {now.toLocaleString()}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ BRANCH STATUS SCREEN (loading state) ============================ */
+function BranchStatusScreen({status}){
+  const copy={
+    resolving:{icon:'⏳',title:'Loading your branch…',sub:'Fetching branch details, please wait.'},
+    missingId:{icon:'🏢',title:'No Branch Linked',sub:'This certificate studio link is missing a branch reference. Ask your administrator for the correct link.'},
+    notFound:{icon:'❌',title:'No Branches Found',sub:'No branch has been set up in the database yet. Please contact your administrator.'},
+    error:{icon:'⚠',title:'Connection Error',sub:'Could not reach the database. Please refresh, or try again shortly.'},
+  }[status]||{icon:'⏳',title:'Loading…',sub:''};
+  return(
+    <div className="setup-overlay">
+      <div className="setup-card">
+        <div className="setup-hdr">
+          <div style={{fontSize:36,marginBottom:8}}>🏅</div>
+          <div style={{fontFamily:"'Cinzel',serif",fontSize:21,fontWeight:900,color:'#fff',letterSpacing:1.5,textTransform:'uppercase'}}>Teachers Welfare Society</div>
+          <div style={{fontSize:10,color:'rgba(255,255,255,.55)',letterSpacing:1.5,textTransform:'uppercase',marginTop:4}}>Certificate Studio</div>
+        </div>
+        <div className="setup-body">
+          <div style={{fontSize:44,marginBottom:10}}>{copy.icon}</div>
+          <div style={{fontFamily:"'Cinzel',serif",fontSize:17,fontWeight:800,color:'var(--navy)',marginBottom:8}}>{copy.title}</div>
+          <div style={{fontSize:12,color:'var(--tx2)',lineHeight:1.7}}>{copy.sub}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ BRANCH MANAGER MODAL (select/create branch & year) ============================ */
+function BranchManagerModal({branches,onDone,onSave,fbOk,initialMode='select'}){
+  const [mode,setMode]=useState(initialMode);
+  const [selBranch,setSelBranch]=useState(null);
+  const [selSession,setSelSession]=useState('');
+  const [newBranchName,setNewBranchName]=useState('');
+  const [newBranchCode,setNewBranchCode]=useState('BR');
+  const [newBranchLine2,setNewBranchLine2]=useState('');
+  const [newBranchLine3,setNewBranchLine3]=useState('');
+  const [newBranchLine4,setNewBranchLine4]=useState('');
+  const [newSessionName,setNewSessionName]=useState('');
+  const [addingSession,setAddingSession]=useState(false);
+  const [loading,setLoading]=useState(false);
+  const branch=branches.find(s=>s.id===selBranch);
+  useEffect(()=>{if(branch&&branch.sessions.length){setSelSession(s=>branch.sessions.includes(s)?s:branch.sessions[branch.sessions.length-1]);}else setSelSession('');},[selBranch]);
+  const createBranch=async()=>{
+    if(!newBranchName.trim()){showToast('Enter branch/chapter name','w');return;}
+    if(!newBranchCode.trim()){showToast('Enter a short branch code (used in the Certificate ID, e.g. BR)','w');return;}
+    setLoading(true);
+    const id='branch_'+Date.now();
+    const sess=newSessionName.trim()||String(new Date().getFullYear());
+    const newBranch={id,name:newBranchName.trim(),code:newBranchCode.trim().toUpperCase(),sessions:[sess],line2:newBranchLine2.trim(),line3:newBranchLine3.trim(),line4:newBranchLine4.trim(),adminEmail:window._adminEmail||''};
+    const updated=[...branches,newBranch];
+    await onSave(updated);
+    setSelBranch(id);setSelSession(sess);
+    setNewBranchName('');setNewBranchCode('BR');setNewBranchLine2('');setNewBranchLine3('');setNewBranchLine4('');setNewSessionName('');
+    setMode('select');setLoading(false);
+    showToast(`Branch "${newBranch.name}" created ✓`,'s');
+  };
+  const addSession=async()=>{
+    if(!newSessionName.trim()){showToast('Enter year/batch','w');return;}
+    if(!selBranch){showToast('Select a branch first','w');return;}
+    setLoading(true);
+    const updated=branches.map(s=>s.id===selBranch?{...s,sessions:[...s.sessions,newSessionName.trim()]}:s);
+    await onSave(updated);
+    setSelSession(newSessionName.trim());setNewSessionName('');setAddingSession(false);setLoading(false);
+    showToast('Year/batch added ✓','s');
+  };
+  const canProceed=selBranch&&selSession;
+  return(
+    <div className="setup-overlay">
+      <div className="setup-card" style={{maxWidth:580}}>
+        <div className="setup-hdr">
+          <div style={{fontSize:36,marginBottom:8}}>🏅</div>
+          <div style={{fontFamily:"'Cinzel',serif",fontSize:21,fontWeight:900,color:'#fff',letterSpacing:1.5,textTransform:'uppercase'}}>Teachers Welfare Society</div>
+          <div style={{fontSize:10,color:'rgba(255,255,255,.55)',letterSpacing:1.5,textTransform:'uppercase',marginTop:4}}>Branch & Year Manager</div>
+        </div>
+        <div className="setup-body" style={{textAlign:'left'}}>
+          <div style={{display:'flex',gap:6,marginBottom:16}}>
+            <button onClick={()=>setMode('select')} style={{flex:1,padding:'7px',fontSize:11,fontWeight:700,border:'1.5px solid',borderColor:mode==='select'?'var(--navy)':'var(--bdr)',background:mode==='select'?'var(--navy)':'#fff',color:mode==='select'?'#fff':'var(--tx)',borderRadius:6,cursor:'pointer',fontFamily:'Raleway,sans-serif'}}>🏢 Select Branch & Year</button>
+            {branches.length===0&&(
+              <button onClick={()=>setMode('create')} style={{flex:1,padding:'7px',fontSize:11,fontWeight:700,border:'1.5px solid',borderColor:mode==='create'?'var(--gold)':'var(--bdr)',background:mode==='create'?'#fffbf0':'#fff',color:mode==='create'?'#6e5220':'var(--tx)',borderRadius:6,cursor:'pointer',fontFamily:'Raleway,sans-serif'}}>➕ Create New Branch</button>
+            )}
+          </div>
+          {mode==='select'&&(<>
+            {branches.length===0?(
+              <div style={{textAlign:'center',padding:'24px 16px',background:'#fafbff',border:'1.5px dashed var(--bdr2)',borderRadius:10,marginBottom:12}}>
+                <div style={{fontSize:38,marginBottom:10}}>🏢</div>
+                <div style={{fontWeight:900,color:'var(--navy)',fontSize:14,marginBottom:6,fontFamily:"'Cinzel',serif",textTransform:'uppercase',letterSpacing:1}}>No Branches Found</div>
+                <div style={{fontSize:11,color:'var(--tx2)',lineHeight:1.7,marginBottom:14}}>You haven't created any branch yet.<br/>To get started, click the <strong style={{color:'#6e5220'}}>"➕ Create New Branch"</strong> tab above.</div>
+                <button onClick={()=>setMode('create')} style={{padding:'9px 22px',fontSize:12,fontWeight:700,border:'none',background:'var(--navy)',color:'#fff',borderRadius:7,cursor:'pointer',fontFamily:'Raleway,sans-serif',display:'inline-flex',alignItems:'center',gap:6}}>➕ Create New Branch Now</button>
+              </div>
+            ):(
+              <>
+                <div style={{fontSize:10,fontWeight:800,color:'var(--navy)',textTransform:'uppercase',letterSpacing:.5,marginBottom:8}}>Select Branch</div>
+                <div style={{maxHeight:220,overflowY:'auto',marginBottom:12}}>
+                  {branches.map(br=>(<div key={br.id} onClick={()=>setSelBranch(br.id)} style={{background:'#fff',border:'1.5px solid var(--bdr)',borderRadius:8,padding:'10px 14px',marginBottom:6,cursor:'pointer',display:'flex',alignItems:'center',gap:10}}><div style={{fontSize:22}}>🏢</div><div style={{flex:1}}><div style={{fontWeight:800,color:'var(--navy)',fontSize:12}}>{br.name} <span style={{color:'var(--tx3)',fontWeight:700,fontSize:9.5}}>({br.code||'BR'})</span></div><div style={{fontSize:9,color:'var(--tx2)',marginTop:2}}>{br.sessions?.length||0} years/batches · {br.line2||''}</div></div>{selBranch===br.id&&<div style={{color:'var(--gold)',fontSize:18}}>✓</div>}</div>))}
+                </div>
+                {selBranch&&(<>
+                  <div style={{fontSize:10,fontWeight:800,color:'var(--navy)',textTransform:'uppercase',letterSpacing:.5,marginBottom:8}}>📅 Select Year / Batch</div>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:4,marginBottom:8}}>
+                    {(branch?.sessions||[]).map(ses=>(<span key={ses} className={`session-chip${selSession===ses?' active':''}`} onClick={()=>setSelSession(ses)}>{ses}</span>))}
+                    {!addingSession?(<span className="session-chip" onClick={()=>setAddingSession(true)} style={{background:'#f0fdf4',borderColor:'#bbf7d0',color:'#059669'}}>➕ New Year/Batch</span>):(
+                      <div style={{display:'flex',gap:5,alignItems:'center',width:'100%',marginTop:4}}>
+                        <input className="f-input" style={{flex:1,marginBottom:0}} placeholder="e.g. 2026" value={newSessionName} onChange={e=>setNewSessionName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addSession()}/>
+                        <button className="btn btn-navy btn-sm" onClick={addSession} disabled={loading}>✓ Add</button>
+                        <button className="btn btn-ghost btn-sm" onClick={()=>{setAddingSession(false);setNewSessionName('');}}>✕</button>
+                      </div>
+                    )}
+                  </div>
+                </>)}
+              </>
+            )}
+          </>)}
+          {mode==='create'&&(
+            <div>
+              <div style={{fontSize:10,fontWeight:800,color:'var(--navy)',textTransform:'uppercase',letterSpacing:.5,marginBottom:8}}>New Branch Details</div>
+              {[['Branch / Chapter Name *',newBranchName,setNewBranchName,'e.g. TWS Bihar State Chapter',true],['Branch Code for Certificate ID *',newBranchCode,setNewBranchCode,'e.g. BR',true],['City / Address (Line 2)',newBranchLine2,setNewBranchLine2,'e.g. Patna, Bihar',false],['Registration No. (Line 3)',newBranchLine3,setNewBranchLine3,'e.g. REG. NO. : 12345',false],['Founded (Line 4)',newBranchLine4,setNewBranchLine4,'e.g. ESTD : 1998',false],['First Year / Batch *',newSessionName,setNewSessionName,String(new Date().getFullYear()),false]].map(([lbl,val,setter,ph,req])=>(
+                <div key={lbl} style={{marginBottom:8}}><div style={{fontSize:9,fontWeight:700,color:'var(--tx2)',textTransform:'uppercase',marginBottom:3}}>{lbl}</div><input className="f-input" style={{marginBottom:0}} placeholder={ph} value={val} onChange={e=>setter(e.target.value)} required={req}/></div>
+              ))}
+              <div style={{fontSize:9,color:'var(--tx3)',margin:'4px 0 6px',lineHeight:1.5}}>The branch code appears in every certificate ID, e.g. TWS/<strong>{newBranchCode.trim().toUpperCase()||'BR'}</strong>/{new Date().getFullYear()}/4821.</div>
+              <button className="btn btn-navy" style={{width:'100%',fontSize:12,padding:10,marginTop:6}} onClick={createBranch} disabled={loading||!newBranchName.trim()}>{loading?'Creating…':'🏢 Create Branch & Continue →'}</button>
+            </div>
+          )}
+          {mode==='select'&&canProceed&&(<>
+            <div style={{background:'linear-gradient(135deg,#ecfdf5,#d1fae5)',border:'1.5px solid #10b981',borderRadius:8,padding:'10px 14px',marginBottom:14,fontSize:10}}>
+              <div style={{fontWeight:800,color:'#065f46',marginBottom:2}}>✓ Ready</div>
+              <div style={{color:'#047857'}}>Branch: <strong>{branch?.name}</strong> ({branch?.code||'BR'})</div>
+              <div style={{color:'#047857'}}>Year / Batch: <strong>{selSession}</strong></div>
+            </div>
+            <button className="btn btn-navy" style={{width:'100%',fontSize:13,padding:10}} onClick={()=>onDone(selBranch,selSession,branch)}>🏅 Open Certificate Studio →</button>
+          </>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ APP ROOT ============================ */
+function App(){
+  const [tab,setTab]=useState('types');
+  const [branchObj,setBranchObj]=useState(null);
+  const [activeSession,setActiveSession]=useState(null);
+  const [branchStatus,setBranchStatus]=useState('resolving');
+  const [branches,setBranches]=useState([]);
+  const [branchesLoaded,setBranchesLoaded]=useState(false);
+  const [showSetup,setShowSetup]=useState(false);
+  const [certTypes,setCertTypes]=useState([]);
+  const [certificates,setCertificates]=useState([]);
+  const [designId,setDesignId]=useState(null);
+  const [showCreateType,setShowCreateType]=useState(false);
+  const [fbStatus,setFbStatus]=useState('loading');
+  const [viewingCert,setViewingCert]=useState(null);
+  const [editingCert,setEditingCert]=useState(null);
+  const [verifyCertId,setVerifyCertId]=useState(null);
+  const [serviceBlocked,setServiceBlocked]=useState(null);
+
+  const fbOk=fbStatus==='ok';
+  const cdnConfigured = window.CLOUDINARY_CONFIG.cloudName && window.CLOUDINARY_CONFIG.cloudName!=='YOUR_CLOUD_NAME';
+  const samePageVerifyUrl=(typeof window!=='undefined')? (window.location.origin+window.location.pathname) : '';
+  const activeBranch = branchObj?.id || null;
+  const branchCode = branchObj?.code || 'BR';
+  const workerConfigured = !!(window.CERT_WORKER_CONFIG && window.CERT_WORKER_CONFIG.url && window.CERT_WORKER_CONFIG.url.trim());
+  const verifyBaseUrl = workerConfigured ? `${window.CERT_WORKER_CONFIG.url.replace(/\/$/,'')}/verify` : samePageVerifyUrl;
+  const verifyParam = workerConfigured ? 'id' : 'verify';
+
+  useEffect(()=>{
+    const params=new URLSearchParams(window.location.search);
+    const v=params.get('verify');
+    if(v) setVerifyCertId(v);
+  },[]);
+
+const handleSetupDone=useCallback((branchId,session,branch)=>{
+    if(branch&&branch.services&&branch.services.certificate===false){
+      setServiceBlocked({branchName:branch.name||'This branch'});
+      return;
+    }
+    setBranchObj(branch);
+    setActiveSession(session);
+    setBranchStatus('ready');
+    setShowSetup(false);
+  },[]);
+
+  const saveBranches=useCallback(async(updated)=>{
+    setBranches(updated);
+    if(fbOk&&window.fbSaveOneSchool){
+      for(const s of updated){
+        try{ await window.fbSaveOneSchool(s); }
+        catch(e){ showToast(`Failed to save branch "${s.name}": `+e.message,'e'); }
+      }
+    }
+  },[fbOk]);
+
+useEffect(()=>{
+    const handler=(e)=>{
+      if(e.data&&e.data.type==='switchTab'){
+        setTab(e.data.tab);
+      }
+    };
+    window.addEventListener('message',handler);
+    return()=>window.removeEventListener('message',handler);
+  },[]);
+
+  // Firebase connection lifecycle
+  useEffect(()=>{
+    const onReady=()=>setFbStatus('ok');
+    const onErr=()=>setFbStatus('error');
+    const onNC=()=>setFbStatus('notConfigured');
+    if(window._fbReady===true) onReady();
+    else{
+      document.addEventListener('fbReady',onReady,{once:true});
+      document.addEventListener('fbNotConfigured',onNC,{once:true});
+      document.addEventListener('fbError',onErr,{once:true});
+      setTimeout(()=>setFbStatus(s=>s==='loading'?'timeout':s),8000);
+    }
+  },[]);
+
+  // Auto-load a branch: grabs the first branch found for this admin, unless
+  // ?branch=/?branchId=/CERT_APP_CONFIG.branchId explicitly names one, in
+  // which case that branch is used directly. With zero or multiple branches
+  // the Branch Manager screen is shown so one can be picked/created.
+  useEffect(()=>{
+    const handler=(e)=>{
+      const{email,schools,singleSchoolMode}=e.detail;
+      setBranches(schools||[]);
+      setBranchesLoaded(true);
+      if(singleSchoolMode && schools && schools.length===1){
+        const br=schools[0];
+        const ses=(br.sessions&&br.sessions.length)?br.sessions[br.sessions.length-1]:'';
+        if(ses) handleSetupDone(br.id,ses,br);
+      } else {
+        setShowSetup(true);
+      }
+    };
+    document.addEventListener('adminEmailReady',handler);
+    return()=>document.removeEventListener('adminEmailReady',handler);
+  },[]);
+
+  const loadBranchData=useCallback(async(branchId,session)=>{
+    if(!branchId||!session||!fbOk)return;
+    try{ const types=await window.fbLoadCertTypes(branchId,session); setCertTypes(types||[]); }catch(e){ console.warn(e); }
+    try{ const certs=await window.fbLoadCertificates(branchId,session); setCertificates(certs||[]); }catch(e){ console.warn(e); }
+  },[fbOk]);
+
+  useEffect(()=>{ if(branchStatus==='ready'&&activeBranch&&activeSession) loadBranchData(activeBranch,activeSession); },[branchStatus,activeBranch,activeSession]);
+
+  const createType=(ct)=>{
+    setCertTypes(p=>[...p,ct]); setShowCreateType(false); setDesignId(ct.id); setTab('designer');
+    if(fbOk&&window.fbSaveCertType) window.fbSaveCertType(ct,activeBranch,activeSession).catch(()=>showToast('Saved locally (Firebase save failed)','w'));
+    showToast('Certificate type created ✓','s');
+  };
+  const replaceTypeImage=useCallback(async(id,file)=>{
+    if(!file||!file.type.match(/image\//)){ showToast('Please choose an image file','e'); return; }
+    const reader=new FileReader();
+    reader.onload=async(e)=>{
+      let img=e.target.result;
+      const cloudReady=window.CLOUDINARY_CONFIG.cloudName&&window.CLOUDINARY_CONFIG.cloudName!=='YOUR_CLOUD_NAME';
+      if(cloudReady){
+        try{ img=await window.uploadToCloudinary(img, window.CLOUDINARY_CONFIG.folder+'/templates'); }
+        catch(err){ showToast('Cloud upload failed, using local image: '+err.message,'w'); }
+      }
+      setCertTypes(prev=>{
+        const updated=prev.map(c=>c.id===id?{...c,templateImage:img}:c);
+        const changed=updated.find(c=>c.id===id);
+        if(fbOk&&window.fbSaveCertType&&changed) window.fbSaveCertType(changed,activeBranch,activeSession).catch(er=>showToast('Auto-save failed: '+er.message,'w'));
+        return updated;
+      });
+      showToast('Template image replaced — labels & positions kept ✓','s');
+    };
+    reader.readAsDataURL(file);
+  },[fbOk,activeBranch,activeSession]);
+
+  const updateType=useCallback((updated)=>{
+    setCertTypes(prev=>prev.map(c=>c.id===updated.id?updated:c));
+    if(fbOk&&window.fbSaveCertType) window.fbSaveCertType(updated,activeBranch,activeSession).catch((e)=>showToast('Auto-save failed: '+e.message,'w'));
+  },[fbOk,activeBranch,activeSession]);
+  const saveTypeToCloud=useCallback(async(ct)=>{
+    if(!fbOk||!window.fbSaveCertType){ showToast('Firebase not connected — saved locally only','w'); return; }
+    try{ await window.fbSaveCertType(ct,activeBranch,activeSession); showToast('Template saved to Firebase ☁️','s'); }
+    catch(e){ showToast('Save failed: '+e.message,'e'); }
+  },[fbOk,activeBranch,activeSession]);
+  const deleteType=async(id)=>{
+    if(!confirm('Delete this certificate type? Existing generated certificates keep their data (snapshot) but the template link is removed.')) return;
+    setCertTypes(p=>p.filter(c=>c.id!==id));
+    if(designId===id) setDesignId(null);
+    if(fbOk&&window.fbDeleteCertType){
+      try{
+        await window.fbDeleteCertType(id,activeBranch,activeSession);
+        showToast('Certificate type deleted ✓','s');
+      }catch(e){
+        showToast('Deleted locally — Firebase delete failed: '+e.message,'w');
+      }
+    }else{
+      showToast('Deleted locally — Firebase not connected','w');
+    }
+  };
+  const onGenerated=async(cert)=>{
+    setCertificates(p=>[cert,...p]);
+    if(fbOk&&window.fbSaveCertificate){
+      try{
+        await window.fbSaveCertificate(cert,activeBranch,activeSession);
+        showToast(`Certificate saved to database ✓ — ${cert.certId}`,'s');
+      }catch(e){
+        showToast('Saved locally only (Firebase failed): '+e.message,'e');
+      }
+    } else {
+      showToast('Firebase not connected — certificate exists only in this browser tab','w');
+    }
+  };
+  const reloadCerts=async()=>{ if(!fbOk)return; try{ const certs=await window.fbLoadCertificates(activeBranch,activeSession); setCertificates(certs||[]); showToast('Reloaded ✓','s'); }catch(e){ showToast('Reload failed','e'); } };
+  const deleteCert=async(certId)=>{
+    if(!confirm('Delete this certificate record?'))return;
+    setCertificates(p=>p.filter(c=>c.certId!==certId));
+    if(fbOk&&window.fbDeleteCertificate){
+      try{
+        await window.fbDeleteCertificate(certId,activeBranch,activeSession);
+        showToast('Certificate deleted ✓','s');
+      }catch(e){
+        showToast('Deleted locally — Firebase delete failed: '+e.message,'w');
+      }
+    }else{
+      showToast('Deleted locally — Firebase not connected','w');
+    }
+  };
+
+  const activeDesignType=certTypes.find(c=>c.id===designId);
+  const fbLabel={loading:'Connecting…',timeout:'Timeout',notConfigured:'Not Configured',ok:'Connected',error:'Error'}[fbStatus]||fbStatus;
+  const fbDot={loading:'spin',timeout:'err',notConfigured:'err',ok:'ok',error:'err'}[fbStatus];
+  const existingCategories=[...new Set(certTypes.map(c=>c.listName).filter(Boolean))];
+
+  if(showSetup || branchStatus!=='ready'){
+    if(!branchesLoaded) return <BranchStatusScreen status="resolving"/>;
+    return <BranchManagerModal branches={branches} onDone={handleSetupDone} onSave={saveBranches} fbOk={fbOk} initialMode='select'/>;
+  }
+
+  return(
+    <div className="app">
+      <div className="topbar">
+        <div className="brand">
+          <div className="brand-badge">🏅</div>
+          <div>
+            <h1>TWS Certificate Studio</h1>
+            <p>Teachers Welfare Society</p>
+          </div>
+        </div>
+        <div className="tabs">
+          {[['types','🏅 Types'],['designer','🎨 Designer'],['create','➕ Create'],['history','📜 History']].map(([id,lbl])=>(
+            <button key={id} className={`tab-btn${tab===id?' active':''}`} onClick={()=>setTab(id)}>{lbl}</button>
+          ))}
+        </div>
+      </div>
+
+      <div className="context-bar no-print">
+        <span style={{fontSize:9,color:'rgba(255,255,255,.4)',fontWeight:700}}>🏢</span>
+        <span style={{fontSize:10.5,fontWeight:700}}>{branchObj?.name} ({branchObj?.code||'BR'})</span>
+        <button className="ctx-btn" onClick={()=>setShowSetup(true)}>⚙ Branches</button>
+        {(branchObj?.sessions||[]).length>1 ? (<>
+          <span style={{fontSize:9,color:'rgba(255,255,255,.4)',fontWeight:700,marginLeft:6}}>📅</span>
+          <select className="ctx-sel" value={activeSession||''} onChange={e=>{const ses=e.target.value;setActiveSession(ses);setCertTypes([]);setCertificates([]);loadBranchData(activeBranch,ses);}}>
+            {(branchObj?.sessions||[]).map(s=><option key={s} value={s}>{s}</option>)}
+          </select>
+        </>) : (
+          <span style={{fontSize:9,color:'rgba(255,255,255,.4)',marginLeft:6}}>📅 {activeSession}</span>
+        )}
+        <div style={{fontSize:9,color:'rgba(255,255,255,.5)'}}>{certTypes.length} types · {certificates.length} certificates</div>
+        <div className="fb-pill" style={{marginLeft:'auto'}}><div className={`fb-dot ${fbDot}`}/>🔥 Firebase: {fbLabel}</div>
+        <div className="fb-pill"><div className={`fb-dot ${cdnConfigured?'ok':'err'}`}/>☁️ CDN: {cdnConfigured?'Connected':'Not Configured'}</div>
+        <div className="fb-pill"><div className={`fb-dot ${workerConfigured?'ok':'err'}`}/>🔗 Verify Worker: {workerConfigured?'Connected':'Not Configured'}</div>
+      </div>
+
+      <div className="app-body">
+        <div className="main">
+          {tab==='types' && <TypesTab certTypes={certTypes} onOpenCreate={()=>setShowCreateType(true)} onSelectDesign={(id)=>{setDesignId(id);setTab('designer');}} onDelete={deleteType} onReplaceImage={replaceTypeImage}/>}
+          {tab==='designer' && <DesignerTab certType={activeDesignType} certTypes={certTypes} onUpdate={updateType} onSaveCloud={saveTypeToCloud} onReplaceImage={replaceTypeImage} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} onBack={()=>setTab('types')}/>}
+          {tab==='create' && <CreateTab certTypes={certTypes} branchCode={branchCode} onGenerated={onGenerated} fbOk={fbOk} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} onBack={()=>setTab('types')}/>}
+          {tab==='history' && <HistoryTab certificates={certificates} certTypes={certTypes} fbOk={fbOk} onRefresh={reloadCerts} onView={setViewingCert} onEdit={setEditingCert} onDelete={deleteCert} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam}/>}
+        </div>
+      </div>
+
+      {showCreateType && <CreateTypeModal onClose={()=>setShowCreateType(false)} onCreated={createType} fbOk={fbOk} existingCategories={existingCategories}/>}
+      {viewingCert && <ViewCertModal cert={viewingCert} certTypes={certTypes} onClose={()=>setViewingCert(null)} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam}/>}
+      {editingCert && <EditCertModal cert={editingCert} certTypes={certTypes} onClose={()=>setEditingCert(null)} onSaved={(updated)=>{ setCertificates(p=>p.map(c=>c.certId===updated.certId?updated:c)); setEditingCert(null); }} fbOk={fbOk} activeBranch={activeBranch} activeSession={activeSession} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam}/>}
+      {verifyCertId && <VerifyOverlay certId={verifyCertId} certTypes={certTypes} branchName={branchObj?.name} onClose={()=>{setVerifyCertId(null);window.history.replaceState({},'',window.location.pathname);}} fbOk={fbOk} activeBranch={activeBranch} activeSession={activeSession}/>}
+
+      {serviceBlocked&&(
+        <div className="modal-bg" style={{zIndex:5000}} onClick={()=>setServiceBlocked(null)}>
+          <div className="modal" style={{maxWidth:440,textAlign:'center',position:'relative',padding:'34px 26px'}} onClick={e=>e.stopPropagation()}>
+            <button onClick={()=>setServiceBlocked(null)} style={{position:'absolute',top:12,right:12,background:'rgba(194,59,59,.12)',border:'1px solid rgba(194,59,59,.3)',color:'#c23b3b',width:30,height:30,borderRadius:'50%',fontSize:15,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>✕</button>
+            <div style={{fontSize:54,marginBottom:12}}>🚫</div>
+            <h3 style={{fontFamily:"'Cinzel',serif",fontSize:21,fontWeight:900,color:'var(--navy)',marginBottom:10}}>Service Blocked by Admin</h3>
+            <p style={{fontSize:13,color:'var(--tx2)',lineHeight:1.7}}>
+              The <strong>Certificate Studio</strong> for <strong>{serviceBlocked.branchName}</strong> has been suspended by the Super Admin.
+            </p>
+            <p style={{fontSize:11.5,color:'var(--tx2)',marginTop:10}}>Please contact your administrator to restore access.</p>
+          </div>
+        </div>
+      )}
+
+      <div style={{background:'var(--navy)',color:'rgba(255,255,255,.55)',textAlign:'center',padding:'6px',fontSize:9.5}} className="no-print">
+        Teachers Welfare Society · Certificate Studio v1.0 · {branchObj?.name||''} {activeSession?`· ${activeSession}`:''}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+
+try{ window.parent.postMessage({type:'studioReady'}, '*'); }catch(e){}
+</script>
+
+<script>
+window._adminEmail='';
+window._singleSchoolMode=false;
+window.addEventListener('message',function(e){
+  if(e.data&&e.data.type==='setAdminEmail'){
+    const newEmail=e.data.email||'';
+    if(window._adminEmail===newEmail&&window._adminEmailReady)return;
+    window._adminEmail=newEmail;
+    window._adminEmailReady=true;
+    window._singleSchoolMode=e.data.singleSchoolMode===true;
+    const tryLoad=()=>{
+      if(window.fbLoadSchools&&window._fbReady){
+        window.fbLoadSchools(window._adminEmail).then(function(branches){
+          if(window.fbSaveOneSchool&&branches&&branches.length){
+            branches.forEach(function(s){
+              if(!s.adminEmail&&window._adminEmail){
+                window.fbSaveOneSchool({...s,adminEmail:window._adminEmail}).catch(()=>{});
+              }
+            });
+          }
+          document.dispatchEvent(new CustomEvent('adminEmailReady',{
+            detail:{email:window._adminEmail,schools:branches||[],singleSchoolMode:window._singleSchoolMode}
+          }));
+        });
+      } else {
+        setTimeout(tryLoad,400);
+      }
+    };
+    tryLoad();
+  }
+});
+</script>
+</body>
+</html>

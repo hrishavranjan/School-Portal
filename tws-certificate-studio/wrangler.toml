@@ -1,0 +1,3 @@
+name = "tws-cid"
+main = "tws-certificate-worker.js"
+compatibility_date = "2024-09-01"

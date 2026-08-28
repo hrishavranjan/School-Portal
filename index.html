@@ -119,8 +119,12 @@ body{font-family:'Space Grotesk',sans-serif;background:var(--ink);min-height:100
 /* ══════════════════════════════
    DASHBOARD VIEW
 ══════════════════════════════ */
-#dashboardView{flex:1;overflow-y:auto;overflow-x:hidden;display:none;flex-direction:column;scroll-behavior:smooth}
+#dashboardView{flex:1;overflow-y:auto;overflow-x:hidden;display:none;flex-direction:column;scroll-behavior:smooth;scrollbar-gutter:stable}
 #dashboardView.active{display:flex}
+#dashboardView::-webkit-scrollbar{width:7px}
+#dashboardView::-webkit-scrollbar-track{background:transparent}
+#dashboardView::-webkit-scrollbar-thumb{background:linear-gradient(var(--teal-d),var(--teal-l));border-radius:10px}
+#dashboardView{scrollbar-width:thin;scrollbar-color:var(--teal-m) transparent}
 .dashboard-bg{position:absolute;inset:0;z-index:0;pointer-events:none;background:radial-gradient(ellipse 80% 50% at 50% -20%,rgba(15,118,110,.15),transparent)}
 .welcome-section{padding:28px 24px 16px;position:relative;z-index:1}
 .welcome-txt{font-family:'Syne',sans-serif;font-size:28px;font-weight:800;color:#fff;margin-bottom:6px}
@@ -134,6 +138,20 @@ body{font-family:'Space Grotesk',sans-serif;background:var(--ink);min-height:100
 .studio-card::before{content:'';position:absolute;inset:0;opacity:0;transition:opacity .25s;border-radius:20px}
 .studio-card:hover{transform:translateY(-4px);border-color:rgba(20,184,166,.3);box-shadow:0 16px 48px rgba(0,0,0,.35),0 0 0 1px rgba(20,184,166,.15)}
 .studio-card:hover::before{opacity:1}
+.studios-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(260px,300px));
+  gap:16px;
+  padding:0 24px 24px;
+  position:relative;
+  z-index:1;
+}
+@media(max-width:640px){
+  .studios-grid{grid-template-columns:1fr}
+}
+.studios-grid.single{
+  grid-template-columns:minmax(260px,300px);
+}
 .studio-card.student::before{background:linear-gradient(135deg,rgba(37,99,235,.08),transparent)}
 .studio-card.teacher::before{background:linear-gradient(135deg,rgba(15,118,110,.1),transparent)}
 .studio-card.apparel::before{background:linear-gradient(135deg,rgba(201,162,39,.08),transparent)}
@@ -182,7 +200,11 @@ body{font-family:'Space Grotesk',sans-serif;background:var(--ink);min-height:100
 .studio-breadcrumb strong{color:rgba(255,255,255,.8)}
 .studio-badge{margin-left:auto;font-size:9px;font-weight:700;padding:3px 10px;border-radius:20px;letter-spacing:.5px}
 
-.studio-iframe-wrap{flex:1;overflow:hidden;position:relative}
+.studio-iframe-wrap{flex:1;overflow:auto;position:relative;scroll-behavior:smooth}
+.studio-iframe-wrap::-webkit-scrollbar{width:7px}
+.studio-iframe-wrap::-webkit-scrollbar-track{background:transparent}
+.studio-iframe-wrap::-webkit-scrollbar-thumb{background:linear-gradient(var(--teal-d),var(--teal-l));border-radius:10px}
+.studio-iframe-wrap{scrollbar-width:thin;scrollbar-color:var(--teal-m) transparent}
 .studio-iframe-wrap iframe{width:100%;height:100%;border:none;display:block}
 
 /* iframe loading state */
@@ -239,8 +261,8 @@ body{font-family:'Space Grotesk',sans-serif;background:var(--ink);min-height:100
 #studioTabsBar.visible{display:flex}
 
 /* stats in dashboard */
-.dash-stats{display:flex;gap:10px;padding:0 24px 20px;flex-wrap:wrap;position:relative;z-index:1;box-sizing:border-box;width:100%}
-.dash-stat{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:12px;padding:14px 18px;flex:1;min-width:120px}
+.dash-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;padding:0 24px 20px;position:relative;z-index:1;box-sizing:border-box;width:100%}
+.dash-stat{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:12px;padding:16px 12px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
 .dash-stat .dsv{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;color:#fff}
 .dash-stat .dsl{font-size:9.5px;color:rgba(255,255,255,.35);text-transform:uppercase;letter-spacing:.5px;margin-top:3px}
 .dash-stat .dsi{font-size:20px;margin-bottom:6px}
@@ -634,7 +656,7 @@ body{font-family:'Space Grotesk',sans-serif;background:var(--ink);min-height:100
     </div>
 
     <div class="section-label">Other</div>
-    <div class="studios-grid">
+<div class="studios-grid single">
       <!-- Teachers Welfare Society Certificate -->
       <div class="studio-card tws" onclick="openStudio('twscertificate')">
         <div style="display:flex;align-items:flex-start;gap:14px">
@@ -1003,7 +1025,7 @@ async function loadDashboardStats(){
   const email = currentUser?.email;
   try{
     const schSnap = await db.collection('schools').where('adminEmail','==',email).get();
-    document.getElementById('statSchools').textContent = schSnap.size;
+    document.getElementById('statSchools').textContent = schSnap.empty ? '0' : '1';
     let studentTotal = 0, teacherTotal = 0;
     for(const sch of schSnap.docs){
       try{
