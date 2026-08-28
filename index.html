@@ -24,7 +24,7 @@
   --card-border:rgba(255,255,255,.18);
 }
 html{height:100%;scroll-behavior:smooth}
-body{font-family:'Space Grotesk',sans-serif;background:var(--ink);min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;padding:20px 16px;}
+body{font-family:'Space Grotesk',sans-serif;background:var(--ink);min-height:100dvh;overflow:hidden;margin:0}
 
 /* ── BACKGROUND ── */
 #bg-canvas{position:fixed;inset:0;z-index:0;pointer-events:none}
@@ -127,7 +127,8 @@ body{font-family:'Space Grotesk',sans-serif;background:var(--ink);min-height:100
 .welcome-sub{font-size:13px;color:rgba(255,255,255,.38);line-height:1.6}
 .welcome-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(201,162,39,.1);border:1px solid rgba(201,162,39,.25);border-radius:20px;padding:4px 12px;font-size:10px;font-weight:700;color:var(--gold);letter-spacing:.5px;margin-bottom:14px}
 
-.studios-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:18px;padding:8px 24px 32px;position:relative;z-index:1;box-sizing:border-box;width:100%}
+.section-label{font-family:'Syne',sans-serif;font-size:13px;font-weight:800;color:rgba(255,255,255,.55);text-transform:uppercase;letter-spacing:1px;padding:4px 24px 0;position:relative;z-index:1}
+.section-label:first-of-type{padding-top:0}
 
 .studio-card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:20px;padding:24px;cursor:pointer;transition:all .25s;position:relative;overflow:hidden;display:flex;flex-direction:column;gap:14px}
 .studio-card::before{content:'';position:absolute;inset:0;opacity:0;transition:opacity .25s;border-radius:20px}
@@ -136,11 +137,13 @@ body{font-family:'Space Grotesk',sans-serif;background:var(--ink);min-height:100
 .studio-card.student::before{background:linear-gradient(135deg,rgba(37,99,235,.08),transparent)}
 .studio-card.teacher::before{background:linear-gradient(135deg,rgba(15,118,110,.1),transparent)}
 .studio-card.apparel::before{background:linear-gradient(135deg,rgba(201,162,39,.08),transparent)}
+.studio-card.tws::before{background:linear-gradient(135deg,rgba(139,92,246,.1),transparent)}
 
 .sc-icon-wrap{width:56px;height:56px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0}
 .studio-card.student .sc-icon-wrap{background:linear-gradient(135deg,rgba(37,99,235,.2),rgba(59,130,246,.1));border:1px solid rgba(59,130,246,.2)}
 .studio-card.teacher .sc-icon-wrap{background:linear-gradient(135deg,rgba(15,118,110,.2),rgba(20,184,166,.1));border:1px solid rgba(20,184,166,.2)}
 .studio-card.apparel .sc-icon-wrap{background:linear-gradient(135deg,rgba(201,162,39,.2),rgba(245,158,11,.1));border:1px solid rgba(201,162,39,.2)}
+.studio-card.tws .sc-icon-wrap{background:linear-gradient(135deg,rgba(124,58,237,.2),rgba(139,92,246,.1));border:1px solid rgba(139,92,246,.2)}
 
 .sc-info{}
 .sc-title{font-family:'Syne',sans-serif;font-size:18px;font-weight:800;color:#fff;margin-bottom:4px}
@@ -150,11 +153,13 @@ body{font-family:'Space Grotesk',sans-serif;background:var(--ink);min-height:100
 .studio-card.student .sc-tag{background:rgba(59,130,246,.12);color:#93c5fd;border:1px solid rgba(59,130,246,.2)}
 .studio-card.teacher .sc-tag{background:rgba(20,184,166,.12);color:#5eead4;border:1px solid rgba(20,184,166,.2)}
 .studio-card.apparel .sc-tag{background:rgba(201,162,39,.12);color:var(--gold);border:1px solid rgba(201,162,39,.2)}
+.studio-card.tws .sc-tag{background:rgba(139,92,246,.12);color:#c4b5fd;border:1px solid rgba(139,92,246,.2)}
 
 .sc-arrow{position:absolute;right:20px;bottom:20px;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .2s}
 .studio-card.student .sc-arrow{background:rgba(59,130,246,.15);color:#93c5fd}
 .studio-card.teacher .sc-arrow{background:rgba(20,184,166,.15);color:#5eead4}
 .studio-card.apparel .sc-arrow{background:rgba(201,162,39,.15);color:var(--gold)}
+.studio-card.tws .sc-arrow{background:rgba(139,92,246,.15);color:#c4b5fd}
 .studio-card:hover .sc-arrow{transform:translateX(3px) scale(1.1)}
 
 .sc-status{display:flex;align-items:center;gap:5px;font-size:10px;font-weight:700;margin-top:auto}
@@ -191,7 +196,7 @@ body{font-family:'Space Grotesk',sans-serif;background:var(--ink);min-height:100
 .coming-soon-panel p{color:rgba(255,255,255,.38);font-size:14px}
 
 /* ── MODAL (reset pw) ── */
-.modal-overlay{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.72);backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;padding:16px}
+.modal-overlay{position:fixed;inset:0;z-index:700;background:rgba(0,0,0,.72);backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;padding:16px}
 .modal-overlay.open{display:flex;animation:fade-in .18s ease}
 @keyframes fade-in{from{opacity:0}to{opacity:1}}
 .modal-box{background:rgba(12,18,34,.99);border:1px solid rgba(255,255,255,.11);border-radius:18px;width:100%;max-width:410px;box-shadow:0 20px 70px rgba(0,0,0,.7);animation:modal-pop .28s cubic-bezier(.175,.885,.32,1.275) both;overflow:hidden}
@@ -211,6 +216,13 @@ body{font-family:'Space Grotesk',sans-serif;background:var(--ink);min-height:100
 .btn-primary:hover{transform:translateY(-1px);box-shadow:0 5px 18px rgba(20,184,166,.38)}
 .btn-ghost-sm{padding:10px 20px;border-radius:9px;border:1px solid rgba(255,255,255,.09);cursor:pointer;background:transparent;font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:600;color:rgba(255,255,255,.45);transition:all .2s}
 .btn-ghost-sm:hover{background:rgba(255,255,255,.05);color:#fff}
+/* ── LOGIN MODAL ── */
+.login-modal-box{background:transparent;border:none;box-shadow:none;max-width:420px;width:100%;padding:0;position:relative;overflow:visible;animation:modal-pop .28s cubic-bezier(.175,.885,.32,1.275) both}
+.login-modal-close{position:absolute;top:14px;right:14px;width:36px;height:36px;border-radius:50%;background:linear-gradient(145deg,rgba(22,28,48,.98),rgba(10,15,30,.98));border:1px solid rgba(255,255,255,.18);color:rgba(255,255,255,.85);cursor:pointer;z-index:20;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.08);transition:all .2s cubic-bezier(.175,.885,.32,1.275)}
+.login-modal-close svg{width:14px;height:14px;transition:transform .2s;pointer-events:none}
+.login-modal-close:hover{background:linear-gradient(145deg,rgba(239,68,68,.28),rgba(239,68,68,.16));border-color:rgba(239,68,68,.5);box-shadow:0 6px 22px rgba(239,68,68,.35)}
+.login-modal-close:hover svg{transform:rotate(90deg)}
+.login-modal-close:active{transform:scale(.92)}
 
 /* ── TOAST ── */
 .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:600;background:rgba(10,15,30,.97);backdrop-filter:blur(16px);border-radius:11px;padding:11px 18px;font-size:13px;font-weight:600;box-shadow:0 7px 28px rgba(0,0,0,.5);display:none;white-space:nowrap}
@@ -232,6 +244,126 @@ body{font-family:'Space Grotesk',sans-serif;background:var(--ink);min-height:100
 .dash-stat .dsv{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;color:#fff}
 .dash-stat .dsl{font-size:9.5px;color:rgba(255,255,255,.35);text-transform:uppercase;letter-spacing:.5px;margin-top:3px}
 .dash-stat .dsi{font-size:20px;margin-bottom:6px}
+/* ═══ SITE NAV (Home / About / Login) ═══ */
+.site-nav{position:fixed;top:0;left:0;right:0;z-index:500;display:flex;align-items:center;justify-content:space-between;padding:14px max(5vw,24px);background:rgba(10,15,30,.55);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-bottom:1px solid rgba(255,255,255,.07);transition:background .3s,border-color .3s;box-sizing:border-box}
+.site-nav.scrolled{background:rgba(10,15,30,.92);border-color:rgba(255,255,255,.1)}
+.site-nav-brand{display:flex;align-items:center;gap:10px;cursor:pointer}
+.site-nav-brand .nh{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--teal-d),var(--teal-m));display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 4px 14px var(--teal-glow)}
+.site-nav-brand span{font-family:'Syne',sans-serif;font-size:16px;font-weight:800;color:#fff}
+.site-nav-links{display:flex;align-items:center;gap:6px}
+.site-nav-link{padding:8px 16px;border-radius:9px;font-size:13px;font-weight:600;color:rgba(255,255,255,.6);cursor:pointer;transition:all .2s;font-family:'Space Grotesk',sans-serif;background:none;border:none}
+.site-nav-link:hover{color:#fff;background:rgba(255,255,255,.06)}
+.site-nav-link.active{color:var(--teal-l);background:rgba(20,184,166,.1)}
+.site-nav-login-btn{padding:9px 20px;border-radius:9px;border:none;cursor:pointer;background:linear-gradient(135deg,var(--teal-d),var(--teal-m) 50%,var(--teal-l));background-size:200% 100%;background-position:100% 0;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:#fff;box-shadow:0 3px 14px var(--teal-glow);transition:background-position .35s,transform .15s,box-shadow .2s}
+.site-nav-login-btn:hover{background-position:0 0;transform:translateY(-1px);box-shadow:0 6px 22px rgba(20,184,166,.42)}
+
+/* ═══ SCROLL CONTAINER + SOFT TEAL SCROLLBAR ═══ */
+#siteScroll{height:100dvh;overflow-y:auto;overflow-x:hidden;scroll-snap-type:y proximity;position:relative;z-index:10;scrollbar-gutter:stable}
+#siteScroll::-webkit-scrollbar{width:7px}
+#siteScroll::-webkit-scrollbar-track{background:transparent}
+#siteScroll::-webkit-scrollbar-thumb{background:linear-gradient(var(--teal-d),var(--teal-l));border-radius:10px}
+#siteScroll{scrollbar-width:thin;scrollbar-color:var(--teal-m) transparent}
+
+/* ═══ SHARED PAGE-SECTION LAYOUT ═══ */
+.page-section{min-height:100dvh;scroll-snap-align:start;display:flex;flex-direction:column;justify-content:center;padding:96px 6vw 60px;position:relative;box-sizing:border-box}
+.section-eyebrow{display:inline-flex;align-items:center;gap:6px;background:rgba(20,184,166,.1);border:1px solid rgba(20,184,166,.25);border-radius:20px;padding:4px 14px;font-size:10px;font-weight:700;color:var(--teal-l);letter-spacing:1px;text-transform:uppercase;margin-bottom:16px;width:fit-content}
+
+/* ═══ HOME ═══ */
+.home-hero{display:grid;grid-template-columns:1.1fr .9fr;gap:48px;align-items:center;max-width:1180px;margin:0 auto;width:100%}
+.home-hero h1{font-family:'Syne',sans-serif;font-size:clamp(32px,5vw,52px);font-weight:800;color:#fff;line-height:1.1;margin-bottom:16px}
+.home-hero h1 span{background:linear-gradient(135deg,var(--teal-l),var(--gold));-webkit-background-clip:text;background-clip:text;color:transparent}
+.home-hero p{font-size:15px;color:rgba(255,255,255,.45);line-height:1.7;max-width:480px;margin-bottom:26px}
+.home-hero-actions{display:flex;gap:12px;flex-wrap:wrap}
+.home-cta-primary{padding:13px 26px;border-radius:11px;border:none;cursor:pointer;background:linear-gradient(135deg,var(--teal-d),var(--teal-m),var(--teal-l));font-family:'Syne',sans-serif;font-size:14px;font-weight:700;color:#fff;box-shadow:0 6px 22px var(--teal-glow);transition:transform .15s}
+.home-cta-primary:hover{transform:translateY(-2px)}
+.home-cta-ghost{padding:13px 26px;border-radius:11px;border:1px solid rgba(255,255,255,.15);cursor:pointer;background:rgba(255,255,255,.04);font-family:'Space Grotesk',sans-serif;font-size:14px;font-weight:600;color:rgba(255,255,255,.75);transition:all .15s}
+.home-cta-ghost:hover{background:rgba(255,255,255,.08);color:#fff}
+.home-hero-img{position:relative;border-radius:22px;overflow:hidden;border:1px solid rgba(255,255,255,.1);box-shadow:0 24px 60px rgba(0,0,0,.5)}
+.home-hero-img img{width:100%;height:100%;object-fit:cover;display:block;min-height:320px}
+.home-hero-img::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,transparent 40%,rgba(15,61,54,.55));pointer-events:none}
+
+.home-feature-grid{max-width:1180px;margin:64px auto 0;width:100%;display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px}
+
+@keyframes hf-rise{from{opacity:0;transform:translateY(28px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes hf-icon-float{0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(-5px) rotate(-4deg)}}
+
+.home-feature{
+  background:rgba(255,255,255,.04);
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:16px;
+  padding:20px;
+  position:relative;
+  overflow:hidden;
+  cursor:default;
+  opacity:0;
+  animation:hf-rise .6s cubic-bezier(.175,.885,.32,1.275) forwards;
+  transition:transform .3s cubic-bezier(.175,.885,.32,1.275),border-color .3s,box-shadow .3s,background .3s;
+}
+.home-feature:nth-child(1){animation-delay:.05s}
+.home-feature:nth-child(2){animation-delay:.18s}
+.home-feature:nth-child(3){animation-delay:.31s}
+.home-feature:nth-child(4){animation-delay:.44s}
+
+.home-feature::before{
+  content:'';
+  position:absolute;inset:0;
+  background:radial-gradient(circle at 30% 0%,rgba(20,184,166,.14),transparent 60%);
+  opacity:0;
+  transition:opacity .3s;
+  pointer-events:none;
+}
+.home-feature:hover{
+  transform:translateY(-6px) scale(1.02);
+  border-color:rgba(20,184,166,.4);
+  background:rgba(255,255,255,.06);
+  box-shadow:0 16px 36px rgba(0,0,0,.35),0 0 0 1px rgba(20,184,166,.12);
+}
+.home-feature:hover::before{opacity:1}
+
+.home-feature .hf-icon{
+  font-size:24px;
+  margin-bottom:10px;
+  display:inline-block;
+  animation:hf-icon-float 3.4s ease-in-out infinite;
+  position:relative;
+  z-index:1;
+}
+.home-feature:nth-child(2) .hf-icon{animation-delay:.3s}
+.home-feature:nth-child(3) .hf-icon{animation-delay:.6s}
+.home-feature:nth-child(4) .hf-icon{animation-delay:.9s}
+.home-feature:hover .hf-icon{animation-play-state:paused;transform:scale(1.15) rotate(-8deg)}
+
+.home-feature h3{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;color:#fff;margin-bottom:5px;position:relative;z-index:1}
+.home-feature p{font-size:12px;color:rgba(255,255,255,.4);line-height:1.6;position:relative;z-index:1}
+
+/* ═══ ABOUT ═══ */
+.about-wrap{display:grid;grid-template-columns:.8fr 1.2fr;gap:52px;align-items:center;max-width:1180px;margin:0 auto;width:100%}
+.about-photo{position:relative;border-radius:22px;overflow:hidden;border:1px solid rgba(255,255,255,.1);box-shadow:0 24px 60px rgba(0,0,0,.5);aspect-ratio:4/5}
+.about-photo img{width:100%;height:100%;object-fit:cover;display:block}
+.about-photo::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,transparent 55%,rgba(15,61,54,.6));pointer-events:none}
+.about-photo-badge{position:absolute;bottom:16px;left:16px;background:rgba(10,15,30,.85);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.15);border-radius:12px;padding:10px 14px}
+.about-photo-badge .n{font-family:'Syne',sans-serif;font-size:14px;font-weight:800;color:#fff}
+.about-photo-badge .r{font-size:11px;color:var(--teal-l);font-weight:600}
+.about-wrap h2{font-family:'Syne',sans-serif;font-size:clamp(26px,4vw,38px);font-weight:800;color:#fff;margin-bottom:14px}
+.about-wrap p{font-size:14px;color:rgba(255,255,255,.45);line-height:1.8;margin-bottom:14px;max-width:560px}
+.about-badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.about-badge{font-size:11px;font-weight:700;padding:6px 13px;border-radius:20px;background:rgba(20,184,166,.1);color:var(--teal-l);border:1px solid rgba(20,184,166,.22)}
+.how-card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:24px;transition:transform .25s,border-color .25s,box-shadow .25s;transform-style:preserve-3d}
+.how-card:hover{transform:translateY(-6px) rotateX(4deg);border-color:rgba(20,184,166,.35);box-shadow:0 20px 40px rgba(0,0,0,.4)}
+.how-num{font-family:'Syne',sans-serif;font-size:26px;font-weight:800;color:var(--teal-l);opacity:.6;margin-bottom:10px}
+.how-card h3{font-family:'Syne',sans-serif;font-size:15px;font-weight:700;color:#fff;margin-bottom:6px}
+.how-card p{font-size:12px;color:rgba(255,255,255,.42);line-height:1.6}
+.site-footer{position:relative;z-index:1;padding:56px 6vw 0;background:linear-gradient(180deg,transparent,rgba(15,61,54,.25));}
+.footer-inner{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:32px;padding-bottom:32px;border-bottom:1px solid rgba(255,255,255,.08)}
+.footer-logo{font-family:'Syne',sans-serif;font-size:16px;font-weight:800;color:#fff;margin-bottom:10px}
+.footer-brand p{font-size:12px;color:rgba(255,255,255,.4);line-height:1.7;max-width:280px}
+.footer-col h4{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px}
+.footer-col a{display:block;font-size:12.5px;color:rgba(255,255,255,.55);text-decoration:none;margin-bottom:9px;cursor:pointer;transition:color .15s}
+.footer-col a:hover{color:var(--teal-l)}
+.footer-bottom{max-width:1180px;margin:0 auto;padding:18px 0 22px;text-align:center;font-size:11px;color:rgba(255,255,255,.28)}
+@media(max-width:820px){.footer-inner{grid-template-columns:1fr 1fr}}
+
+@media(max-width:820px){.home-hero,.about-wrap{grid-template-columns:1fr}.home-hero-img{order:-1}}
 </style>
 </head>
 <body>
@@ -240,6 +372,19 @@ body{font-family:'Space Grotesk',sans-serif;background:var(--ink);min-height:100
 <div class="grid-overlay"></div>
 <div class="orb orb-1"></div>
 <div class="orb orb-2"></div>
+<!-- ══════ SITE NAV ══════ -->
+<nav class="site-nav" id="siteNav">
+  <div class="site-nav-brand" onclick="scrollToSection('homeSection')">
+    <div class="nh">🏫</div><span>School Portal</span>
+  </div>
+  <div class="site-nav-links">
+        <button class="site-nav-link active" onclick="scrollToSection('homeSection')" data-nav="homeSection">Home</button>
+    <button class="site-nav-link" onclick="scrollToSection('howItWorksSection')" data-nav="howItWorksSection">How It Works</button>
+    <button class="site-nav-link" onclick="scrollToSection('aboutSection')" data-nav="aboutSection">About</button>
+    <button class="site-nav-link" onclick="scrollToSection('contactSection')" data-nav="contactSection">Contact</button>
+        <button class="site-nav-login-btn" onclick="openLoginModal()">Login →</button>
+  </div>
+</nav>
 
 <!-- ── LOADING ── -->
 <div class="loading-overlay" id="loadingOverlay">
@@ -247,46 +392,108 @@ body{font-family:'Space Grotesk',sans-serif;background:var(--ink);min-height:100
   <div class="load-txt" id="loadTxt">Initializing</div>
 </div>
 
-<!-- ══════ LOGIN PAGE ══════ -->
-<div id="loginPage">
-  <div id="scene">
-    <div class="login-card" id="loginCard">
-      <div class="logo-area">
-        <div class="logo-hex">🏫</div>
-        <div class="logo-title">School Portal</div>
-        <div class="logo-sub">ID Card Studio Suite</div>
+<div id="siteScroll">
+<section class="page-section" id="homeSection">
+  <div class="home-hero">
+    <div>
+      <div class="section-eyebrow">✦ ID Card Studio Suite</div>
+      <h1>ID cards, certificates <span>& more</span> — done in minutes.</h1>
+      <p>A single admin dashboard to design, print, and QR-verify student and teacher ID cards, certificates, and apparel IDs — synced live to Firebase.</p>
+      <div class="home-hero-actions">
+        <button class="home-cta-primary" onclick="openLoginModal()">Admin Login</button>
+        <button class="home-cta-ghost" onclick="scrollToSection('aboutSection')">Learn More</button>
       </div>
-      <div style="text-align:center;margin-bottom:18px">
-        <div class="admin-badge"><div class="admin-badge-dot"></div>Admin Access Only</div>
-      </div>
-      <div id="msgBox" class="msg"></div>
-      <div class="input-group">
-        <label>Email Address</label>
-        <div class="input-wrap">
-          <svg class="input-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
-          <input type="email" id="loginEmail" placeholder="admin@school.edu" autocomplete="email">
-        </div>
-      </div>
-      <div class="input-group">
-        <label>Password</label>
-        <div class="input-wrap">
-          <svg class="input-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          <input type="password" id="loginPw" placeholder="••••••••" autocomplete="current-password">
-          <button class="toggle-pw" onclick="togglePw('loginPw',this)" type="button">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-          </button>
-        </div>
-      </div>
-      <div class="forgot"><a href="#" onclick="doForgotInline(event)">Forgot password?</a></div>
-      <button class="btn-login" id="btnLogin" onclick="doLogin()">
-        <span id="btnLoginTxt">Sign In</span>
-        <div class="btn-spinner" id="btnLoginSpinner"></div>
-      </button>
-      <div class="divider"><span>Authorised Personnel Only</span></div>
+    </div>
+    <div class="home-hero-img">
+      <img src="Images/Home Image.png" alt="Students on campus">
     </div>
   </div>
-  <div class="under-credit">Designed by <strong>Hrishav Ranjan</strong> &nbsp;❤️&nbsp; © 2026 · School Portal Suite</div>
-</div>
+
+  <div class="home-feature-grid">
+    <div class="home-feature"><div class="hf-icon">🎓</div><h3>Student ID Studio</h3><p>Bulk upload, design, print, QR-verify.</p></div>
+    <div class="home-feature"><div class="hf-icon">👩‍🏫</div><h3>Teacher ID Studio</h3><p>Signature & stamp overlays, multi-school.</p></div>
+    <div class="home-feature"><div class="hf-icon">📜</div><h3>Certificate Maker</h3><p>Merit, participation & achievement templates.</p></div>
+    <div class="home-feature"><div class="hf-icon">🪪</div><h3>Appar ID Studio</h3><p>Guardian details, class & school code.</p></div>
+  </div>
+</section>
+
+<section class="page-section" id="aboutSection">
+  <div class="about-wrap">
+    <div class="about-photo">
+      <img src="Images/Hrishav_Ranjan.png" alt="Hrishav Ranjan - Developer">
+      <div class="about-photo-badge">
+        <div class="n">Hrishav Ranjan</div>
+        <div class="r">Creator & Developer</div>
+      </div>
+    </div>
+    <div>
+      <div class="section-eyebrow">✦ About This Project</div>
+      <h2>Built to make school ID printing effortless.</h2>
+      <p>School Portal is an all-in-one ID Card Studio Suite built for institutions that need fast, reliable, and secure identity card generation — for students, teachers, certificates, and apparel — all from one dashboard.</p>
+      <p>It runs on Firebase for real-time data sync and authentication, with built-in QR verification so every printed card can be checked instantly.</p>
+      <div class="about-badges">
+        <span class="about-badge">🔥 Firebase</span>
+        <span class="about-badge">📱 QR Verify</span>
+        <span class="about-badge">🖨️ PDF Export</span>
+        <span class="about-badge">🏫 Multi-School</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="page-section" id="howItWorksSection">
+  <div style="max-width:1180px;margin:0 auto;width:100%">
+    <div class="section-eyebrow">✦ How It Works</div>
+    <h2 style="font-family:'Syne',sans-serif;font-size:clamp(26px,4vw,38px);font-weight:800;color:#fff;margin-bottom:12px">From login to printed ID — in 5 steps</h2>
+    <p style="font-size:14px;color:rgba(255,255,255,.45);max-width:640px;margin-bottom:36px;line-height:1.7">School Portal is a subscription service. Once your school signs up, our team provisions your account — here's what happens next.</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">
+      <div class="how-card"><div class="how-num">01</div><h3>Get your credentials</h3><p>Our team emails your school admin a login email &amp; temporary password once your subscription is active.</p></div>
+      <div class="how-card"><div class="how-num">02</div><h3>Sign in &amp; change password</h3><p>Log in with the temporary password, then use <strong>Reset Password</strong> in your profile menu to set a new one immediately.</p></div>
+      <div class="how-card"><div class="how-num">03</div><h3>Verify your school profile</h3><p>Confirm your school name and details are correct on your dashboard before creating any cards.</p></div>
+      <div class="how-card"><div class="how-num">04</div><h3>Pick your studio</h3><p>Open whichever studio your plan includes — Student ID, Teacher ID, Certificates, or Appar ID and more.......</p></div>
+      <div class="how-card"><div class="how-num">05</div><h3>Generate &amp; print</h3><p>Upload records, design the card, and export QR-verified, print-ready PDFs.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="page-section" id="contactSection">
+  <div style="max-width:640px;margin:0 auto;width:100%;text-align:center">
+    <div class="section-eyebrow" style="margin:0 auto 16px">✦ Get In Touch</div>
+    <h2 style="font-family:'Syne',sans-serif;font-size:clamp(26px,4vw,36px);font-weight:800;color:#fff;margin-bottom:12px">Have a question about your plan?</h2>
+    <p style="font-size:14px;color:rgba(255,255,255,.45);margin-bottom:28px;line-height:1.7">Whether it's about credentials, upgrading your studio access, or a bug — reach out and we'll get back to you.</p>
+    <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+      <a href="mailto:hrishavranjan2003@gmail.com?subject=School%20Portal%20Question" class="home-cta-primary" style="text-decoration:none;display:inline-block">✉️ Email Us</a>
+      <a href="https://wa.me/919693989969" target="_blank" class="home-cta-ghost" style="text-decoration:none;display:inline-block">💬 WhatsApp Us</a>
+    </div>
+  </div>
+</section>
+
+<footer class="site-footer" id="siteFooter">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <div class="footer-logo">🏫 School Portal</div>
+      <p>The complete ID Card Studio Suite for schools — student &amp; teacher IDs, certificates, and appar IDs and more.........., synced live to Firebase.</p>
+    </div>
+    <div class="footer-col">
+      <h4>Product</h4>
+      <a onclick="scrollToSection('homeSection')">Home</a>
+      <a onclick="scrollToSection('howItWorksSection')">How It Works</a>
+      <a onclick="scrollToSection('aboutSection')">About</a>
+    </div>
+    <div class="footer-col">
+      <h4>Support</h4>
+      <a onclick="scrollToSection('contactSection')">Ask a Question</a>
+      <a href="mailto:hrishavranjan2003@gmail.com">Email Support</a>
+    </div>
+    <div class="footer-col">
+      <h4>Access</h4>
+      <a onclick="openLoginModal()">Admin Login →</a>
+    </div>
+  </div>
+  <div class="footer-bottom">© 2026 School Portal Suite · Designed by <strong>Hrishav Ranjan</strong> ❤️</div>
+</footer>
+
+</div><!-- /#siteScroll -->
 
 <!-- ══════ PORTAL ══════ -->
 <div id="portal">
@@ -345,9 +552,10 @@ body{font-family:'Space Grotesk',sans-serif;background:var(--ink);min-height:100
       <div class="dash-stat"><div class="dsi">🎓</div><div class="dsv" id="statStudents">—</div><div class="dsl">Students</div></div>
       <div class="dash-stat"><div class="dsi">👩‍🏫</div><div class="dsv" id="statTeachers">—</div><div class="dsl">Teachers</div></div>
       <div class="dash-stat"><div class="dsi">🏫</div><div class="dsv" id="statSchools">—</div><div class="dsl">Schools</div></div>
-      <div class="dash-stat"><div class="dsi">🎴</div><div class="dsv">4</div><div class="dsl">Studios</div></div>
+      <div class="dash-stat"><div class="dsi">🎴</div><div class="dsv">5</div><div class="dsl">Studios</div></div>
     </div>
 
+    <div class="section-label">For School</div>
     <div class="studios-grid">
       <!-- Student Studio -->
       <div class="studio-card student" onclick="openStudio('student')">
@@ -425,6 +633,27 @@ body{font-family:'Space Grotesk',sans-serif;background:var(--ink);min-height:100
       </div>
     </div>
 
+    <div class="section-label">Other</div>
+    <div class="studios-grid">
+      <!-- Teachers Welfare Society Certificate -->
+      <div class="studio-card tws" onclick="openStudio('twscertificate')">
+        <div style="display:flex;align-items:flex-start;gap:14px">
+          <div class="sc-icon-wrap">🏅</div>
+          <div class="sc-info">
+            <div class="sc-title">Certificate by Teachers Welfare Society</div>
+            <div class="sc-desc">Design and print certificates issued under the Teachers Welfare Society, with QR verification and school branding.</div>
+            <div class="sc-tags">
+              <span class="sc-tag">Templates</span>
+              <span class="sc-tag">QR Verify</span>
+              <span class="sc-tag">PDF Export</span>
+            </div>
+          </div>
+        </div>
+        <div class="sc-status live"><div class="sc-status-dot"></div>Live & Active</div>
+        <div class="sc-arrow">→</div>
+      </div>
+    </div>
+
     <div class="credit-bar">Designed by <strong>Hrishav Ranjan</strong> &nbsp;❤️&nbsp; © 2026 · School Portal Suite</div>
   </div>
 
@@ -463,6 +692,52 @@ body{font-family:'Space Grotesk',sans-serif;background:var(--ink);min-height:100
   </div>
 </div>
 
+<!-- Login Modal -->
+<div class="modal-overlay" id="loginModal">
+  <div class="modal-box login-modal-box">
+   <button class="login-modal-close" onclick="closeLoginModal()" type="button" aria-label="Close">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
+</button>
+    <div id="scene">
+      <div class="login-card" id="loginCard">
+        <div class="logo-area">
+          <div class="logo-hex">🏫</div>
+          <div class="logo-title">School Portal</div>
+          <div class="logo-sub">ID Card Studio Suite</div>
+        </div>
+        <div style="text-align:center;margin-bottom:18px">
+          <div class="admin-badge"><div class="admin-badge-dot"></div>Admin Access Only</div>
+        </div>
+        <div id="msgBox" class="msg"></div>
+        <div class="input-group">
+          <label>Email Address</label>
+          <div class="input-wrap">
+            <svg class="input-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
+            <input type="email" id="loginEmail" placeholder="admin@school.edu" autocomplete="email">
+          </div>
+        </div>
+        <div class="input-group">
+          <label>Password</label>
+          <div class="input-wrap">
+            <svg class="input-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <input type="password" id="loginPw" placeholder="••••••••" autocomplete="current-password">
+            <button class="toggle-pw" onclick="togglePw('loginPw',this)" type="button">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="forgot"><a href="#" onclick="doForgotInline(event)">Forgot password?</a></div>
+        <button class="btn-login" id="btnLogin" onclick="doLogin()">
+          <span id="btnLoginTxt">Sign In</span>
+          <div class="btn-spinner" id="btnLoginSpinner"></div>
+        </button>
+        <div class="divider"><span>Authorised Personnel Only</span></div>
+      </div>
+    </div>
+    <div class="under-credit">Designed by <strong>Hrishav Ranjan</strong> &nbsp;❤️&nbsp; © 2026 · School Portal Suite</div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -484,6 +759,35 @@ let currentUser  = null;
 let currentViewer = null;
 let timerInterval = null;
 const IDLE_MINUTES = 15;
+
+function scrollToSection(id){
+  document.getElementById(id)?.scrollIntoView({behavior:'smooth'});
+}
+function openLoginModal(){
+  document.getElementById('loginModal').classList.add('open');
+  setTimeout(()=>document.getElementById('loginEmail')?.focus(),200);
+}
+function closeLoginModal(){
+  document.getElementById('loginModal').classList.remove('open');
+}
+
+document.addEventListener('DOMContentLoaded',()=>{
+  const scroller=document.getElementById('siteScroll');
+  const nav=document.getElementById('siteNav');
+  if(!scroller)return;
+  scroller.addEventListener('scroll',()=>{
+    nav.classList.toggle('scrolled',scroller.scrollTop>10);
+  });
+  const obs=new IntersectionObserver(entries=>{
+    entries.forEach(en=>{
+      if(en.isIntersecting){
+        document.querySelectorAll('.site-nav-link').forEach(l=>l.classList.remove('active'));
+        document.querySelector(`.site-nav-link[data-nav="${en.target.id}"]`)?.classList.add('active');
+      }
+    });
+  },{threshold:.5});
+  ['homeSection','howItWorksSection','aboutSection','contactSection'].forEach(id=>{const el=document.getElementById(id);if(el)obs.observe(el);});
+});
 
 /* ── PARTICLES ── */
 (function(){
@@ -520,11 +824,9 @@ auth.onAuthStateChanged(async user=>{
 
 /* ── SHOW/HIDE ── */
 function showLogin(){
-  document.getElementById('loginPage').style.display='block';
+  document.getElementById('siteNav').style.display='flex';
   document.getElementById('portal').classList.remove('active');
-  document.body.style.display='flex';
-  document.body.style.alignItems='center';
-  document.body.style.justifyContent='center';
+  closeLoginModal();
   stopAutoLogout();
   setLoading(false);
 }
@@ -548,8 +850,8 @@ async function enterPortal(user){
     const adminSnap=await db.collection('schools').where('adminEmail','==',user.email).limit(1).get();
     if(!adminSnap.empty){
       // This is a school admin — go straight to normal admin flow
-      document.getElementById('loginPage').style.display='none';
       document.getElementById('portal').classList.add('active');
+      document.getElementById('siteNav').style.display='none';
       document.body.style.display='block';
       const ini=(user.displayName||user.email||'?')[0].toUpperCase();
       document.getElementById('profileInitial').textContent=ini;
@@ -579,6 +881,7 @@ document.getElementById('welcomeName').textContent = schoolName;
       }
       document.getElementById('loginPage').style.display='none';
       document.getElementById('portal').classList.add('active');
+      document.getElementById('siteNav').style.display='none';
       document.body.style.display='block';
       const ini=(user.email||'?')[0].toUpperCase();
       document.getElementById('profileInitial').textContent=ini;
@@ -745,13 +1048,15 @@ function openStudio(type){
     student:'student-id-card-studio/student-id-card.html',
     teacher:'teacher-id-card-studio/teacher-id-card.html',
     certificate:'certificate-studio/certificate.html',
-    apparel:'apparel-studio/apparel.html'
+    apparel:'apparel-studio/apparel.html',
+    twscertificate:'tws-certificate-studio/tws-certificate.html'
 };
   const nameMap={
     student:'Student ID‑Card Studio',
     teacher:'Teacher ID‑Card Studio',
     certificate:'Student Certificate Maker',
-    apparel:'Student Appar ID'
+    apparel:'Student Appar ID',
+    twscertificate:'Certificate by Teachers Welfare Society'
   };
   /* ── Switch to studio panel ── */
   document.getElementById('dashboardView').classList.remove('active');
@@ -827,7 +1132,7 @@ function openStudio(type){
     /* ── Studio info pill ── */
     const infoPill=document.createElement('div');
     infoPill.style.cssText='display:flex;flex-direction:column;justify-content:center;padding:0 10px;border-left:1px solid rgba(255,255,255,.12);margin-left:4px;';
-    const icon={student:'🎓',teacher:'👩‍🏫',certificate:'📜',apparel:'👕'}[type]||'📁';
+    const icon={student:'🎓',teacher:'👩‍🏫',certificate:'📜',apparel:'👕',twscertificate:'🏅'}[type]||'📁';
     const sub=type==='student'?'Portrait 5.5×8.5cm · QR Verify · Firebase':'Portrait 5.5×8.5cm · QR Verify · Firebase';
     infoPill.innerHTML=`<div style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:#fff">${icon} ${nameMap[type]}</div><div style="font-size:9px;color:rgba(255,255,255,.35);letter-spacing:.5px">${sub}</div>`;
     bar.appendChild(infoPill);
@@ -842,7 +1147,8 @@ function openStudio(type){
       student:[['upload','📤 Upload'],['students','🎓 Students'],['designer','🎨 Designer'],['preview','🖨️ Print']],
       teacher:[['upload','📤 Upload'],['teachers','👩‍🏫 Teachers'],['designer','🎨 Designer'],['preview','🖨️ Print']],
       certificate:[['types','🎴 Types'],['designer','🎨 Designer'],['create','✍️ Create'],['history','📜 History']],
-      apparel:[['upload','📤 Upload'],['students','🎓 Students'],['designer','🎨 Designer'],['preview','🖨️ Print']]
+      apparel:[['upload','📤 Upload'],['students','🎓 Students'],['designer','🎨 Designer'],['preview','🖨️ Print']],
+      twscertificate:[['types','🎴 Types'],['designer','🎨 Designer'],['create','✍️ Create'],['history','📜 History']]
     };
     const tabs=tabDefs[type]||tabDefs.teacher;
     tabs.forEach(([k,lbl],idx)=>{
@@ -903,8 +1209,9 @@ async function doLogin(){
   const pw=document.getElementById('loginPw').value;
   if(!email||!pw){showMsg('Please fill in all fields.','error');return;}
   setLoading(true);
-  try{
+    try{
     await auth.signInWithEmailAndPassword(email,pw);
+    closeLoginModal();
     showToast('✓ Signed in successfully','success');
   }catch(e){
     showMsg(firebaseErrMsg(e),'error');
