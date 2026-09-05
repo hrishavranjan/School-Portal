@@ -429,6 +429,26 @@ function genCertId(branchCode){
   const num=String(Math.floor(1000+Math.random()*9000));
   return `TWS/${code}/${year}/${num}`;
 }
+
+/* Generates a certId and verifies it doesn't already exist for this branch/session
+   before returning it, retrying with a new random number on collision. */
+async function genUniqueCertId(branchCode, branchId, session){
+  for(let attempt=0; attempt<15; attempt++){
+    const candidate=genCertId(branchCode);
+    if(!branchId || !session || !window.fbGetCertificateById){
+      return candidate; // no DB check possible (offline/not configured) — best effort
+    }
+    try{
+      const existing=await window.fbGetCertificateById(candidate, branchId, session);
+      if(!existing) return candidate;
+    }catch(e){
+      return candidate; // if the check itself fails, don't block generation
+    }
+  }
+  // Extremely unlikely fallback: append a millisecond suffix to guarantee uniqueness
+  return genCertId(branchCode)+'-'+Date.now().toString().slice(-4);
+}
+
 /* Deterministic short code derived from certId — used ONLY for the QR payload
    so the QR stays small. The certificate ID itself is untouched everywhere else. */
 function genShortCode(certId){
@@ -792,7 +812,7 @@ function ImportLabelsModal({currentType,otherTypes,allTypes,onClose,onImport}){
 }
 
 /* ============================ BULK GENERATE MODAL (Excel) ============================ */
-function BulkGenerateModal({certType,branchCode,verifyBaseUrl,verifyParam,onGenerated,onClose}){
+function BulkGenerateModal({certType,branchCode,verifyBaseUrl,verifyParam,onGenerated,onClose,activeBranch,activeSession}){
   const [rows,setRows]=useState(null);
   const [processing,setProcessing]=useState(false);
   const [progress,setProgress]=useState({done:0,total:0});
@@ -878,7 +898,7 @@ const ws=XLSX.utils.json_to_sheet([sampleRow],{header:[...headers,'Issue Date']}
         issueDate=new Date().toISOString().slice(0,10);
       }
 
-      const certId=genCertId(branchCode);
+      const certId=await genUniqueCertId(branchCode, activeBranch, activeSession);
       setCurrentPreview({values,certId,issueDate});
 
       await new Promise(r=>setTimeout(r,60));
@@ -1237,7 +1257,7 @@ function DesignerTab({certType,certTypes,onUpdate,onSaveCloud,onReplaceImage,ver
 }
 
 /* ============================ CREATE CERTIFICATE TAB ============================ */
-function CreateTab({certTypes,branchCode,onGenerated,fbOk,verifyBaseUrl,verifyParam,onBack}){
+function CreateTab({certTypes,branchCode,onGenerated,fbOk,verifyBaseUrl,verifyParam,onBack,activeBranch,activeSession}){
   const categories=useMemo(()=>[...new Set(certTypes.map(ct=>ct.listName||'Uncategorized'))],[certTypes]);
   const [pickedCategory,setPickedCategory]=useState(categories[0]||'');
   useEffect(()=>{ if(categories.length && !categories.includes(pickedCategory)) setPickedCategory(categories[0]); },[categories]);
@@ -1259,6 +1279,7 @@ function CreateTab({certTypes,branchCode,onGenerated,fbOk,verifyBaseUrl,verifyPa
   const printRef=useRef();
   const [issueDateVal,setIssueDateVal]=useState(new Date().toISOString().slice(0,10));
   const [teacherPhotoVal,setTeacherPhotoVal]=useState('');
+  const [certBusy,setCertBusy]=useState(false);
 
   const mergedCertType=useMemo(()=>{
     if(!certType) return null;
@@ -1297,7 +1318,7 @@ function CreateTab({certTypes,branchCode,onGenerated,fbOk,verifyBaseUrl,verifyPa
     if(missing.length){ showToast(`Fill: ${missing.map(m=>m.label).join(', ')}`,'w'); return; }
 
     if(certType.photo?.perCertificate && !teacherPhotoVal){ showToast('Please upload the teacher photo first','w'); return; }
-    const certId=genCertId(branchCode);
+    const certId=await genUniqueCertId(branchCode, activeBranch, activeSession);
     const baseCert={
       certId, shortCode:genShortCode(certId), certTypeId:certType.id, certTypeName:certType.name, listName:certType.listName,
       values:{...values}, createdAt:Date.now(), createdDate:new Date().toISOString().slice(0,10),
@@ -1307,6 +1328,7 @@ function CreateTab({certTypes,branchCode,onGenerated,fbOk,verifyBaseUrl,verifyPa
     };
 
     setGenerated(baseCert);
+    setCertBusy(true);
     showToast('Rendering certificate…','i');
 
     let node=null;
@@ -1344,6 +1366,7 @@ function CreateTab({certTypes,branchCode,onGenerated,fbOk,verifyBaseUrl,verifyPa
 
     showToast('Saving certificate to database…','i');
     await onGenerated(finalCert);
+    setCertBusy(false);
   };
 
   const doPrint=()=>{ setPrintPageOrientation(certType.orientation); window.print(); };
@@ -1353,6 +1376,7 @@ function CreateTab({certTypes,branchCode,onGenerated,fbOk,verifyBaseUrl,verifyPa
     showToast('Generating PDF…','i');
     try{
       const node=certRef.current;
+      await waitForImagesLoaded(node);
       const canvas=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:'#ffffff'});
       const {jsPDF}=window.jspdf;
       const isLand=(certType.orientation||'landscape')==='landscape';
@@ -1368,6 +1392,7 @@ function CreateTab({certTypes,branchCode,onGenerated,fbOk,verifyBaseUrl,verifyPa
   if(!generated) return;
   try{
     const node=printRef.current.querySelector('.cert-frame')||printRef.current;
+    await waitForImagesLoaded(node);
     const canvas=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:null,width:node.offsetWidth,height:node.offsetHeight});
     canvas.toBlob((blob)=>{
       if(!blob){ showToast('Download failed: empty image','e'); return; }
@@ -1381,6 +1406,7 @@ function CreateTab({certTypes,branchCode,onGenerated,fbOk,verifyBaseUrl,verifyPa
   const shareWhatsapp=async()=>{
     if(!generated) return;
     try{
+      await waitForImagesLoaded(printRef.current);
       const canvas=await html2canvas(printRef.current,{scale:2,useCORS:true,backgroundColor:'#ffffff'});
       canvas.toBlob(async(blob)=>{
         const file=new File([blob],`${generated.certId.replace(/\//g,'-')}.png`,{type:'image/png'});
@@ -1493,10 +1519,10 @@ function CreateTab({certTypes,branchCode,onGenerated,fbOk,verifyBaseUrl,verifyPa
           <button className="btn btn-gold" onClick={generate}>🏅 Generate Certificate</button>
           <button className="btn btn-navy" onClick={()=>setShowBulk(true)} disabled={!certType}>📊 Bulk Generate (Excel)</button>
           {generated && <>
-            <button className="btn btn-navy" onClick={doPrint}>🖨 Print (A4)</button>
-            <button className="btn btn-navy" onClick={exportPdf}>📄 Save as PDF</button>
-            <button className="btn btn-ghost" onClick={downloadImage}>🖼 Download PNG</button>
-            <button className="btn btn-wa" onClick={shareWhatsapp}>💬 Share on WhatsApp</button>
+            <button className="btn btn-navy" onClick={doPrint} disabled={certBusy}>🖨 Print (A4)</button>
+            <button className="btn btn-navy" onClick={exportPdf} disabled={certBusy}>{certBusy?'⏳ Preparing…':'📄 Save as PDF'}</button>
+            <button className="btn btn-ghost" onClick={downloadImage} disabled={certBusy}>{certBusy?'⏳ Preparing…':'🖼 Download PNG'}</button>
+            <button className="btn btn-wa" onClick={shareWhatsapp} disabled={certBusy}>{certBusy?'⏳ Preparing…':'💬 Share on WhatsApp'}</button>
           </>}
         </div>
         {generated && <div style={{marginTop:10,fontSize:10.5,color:'var(--tx2)'}}>Unique ID: <span className="hist-id">{generated.certId}</span></div>}
@@ -1578,7 +1604,7 @@ function CreateTab({certTypes,branchCode,onGenerated,fbOk,verifyBaseUrl,verifyPa
           <CertificateView certType={mergedCertType} values={values} certId={generated.certId} scale={1} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} issueDate={issueDateVal} teacherPhoto={teacherPhotoVal}/>
         </div>
       )}
-      {showBulk && <BulkGenerateModal certType={certType} branchCode={branchCode} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} onGenerated={onGenerated} onClose={()=>setShowBulk(false)}/>}
+      {showBulk && <BulkGenerateModal certType={certType} branchCode={branchCode} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} onGenerated={onGenerated} onClose={()=>setShowBulk(false)} activeBranch={activeBranch} activeSession={activeSession}/>}
     </div>
   );
 }
@@ -1819,7 +1845,7 @@ function HistoryTab({certificates,certTypes,fbOk,onRefresh,onView,onEdit,onDelet
       )}
       {bulkPreview && (
         <div style={{position:'absolute',left:-99999,top:0,pointerEvents:'none'}} ref={hiddenRef}>
-          <CertificateView certType={bulkPreview.ct} values={bulkPreview.cert.values} certId={bulkPreview.cert.certId} scale={1} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam}/>
+          <CertificateView certType={bulkPreview.ct} values={bulkPreview.cert.values} certId={bulkPreview.cert.certId} scale={1} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} issueDate={bulkPreview.cert.issueDate} teacherPhoto={bulkPreview.cert.teacherPhoto}/>
         </div>
       )}
     </div>
@@ -1835,6 +1861,7 @@ function ViewCertModal({cert,certTypes,onClose,verifyBaseUrl,verifyParam}){
   const doPrint=()=>{ if(ct) setPrintPageOrientation(ct.orientation); window.print(); };
   const exportPdf=async()=>{
     try{
+      await waitForImagesLoaded(printRef.current);
       const canvas=await html2canvas(printRef.current,{scale:2,useCORS:true,backgroundColor:'#fff'});
       const {jsPDF}=window.jspdf;
       const isLand=(ct?.orientation||'landscape')==='landscape';
@@ -1847,6 +1874,7 @@ function ViewCertModal({cert,certTypes,onClose,verifyBaseUrl,verifyParam}){
   const downloadImage=async()=>{
   try{
     const node=printRef.current.querySelector('.cert-frame')||printRef.current;
+    await waitForImagesLoaded(node);
     const canvas=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:null,width:node.offsetWidth,height:node.offsetHeight});
     canvas.toBlob((blob)=>{
       if(!blob){ showToast('Download failed: empty image','e'); return; }
@@ -1858,6 +1886,7 @@ function ViewCertModal({cert,certTypes,onClose,verifyBaseUrl,verifyParam}){
 };
   const shareWhatsapp=async()=>{
     try{
+      await waitForImagesLoaded(printRef.current);
       const canvas=await html2canvas(printRef.current,{scale:2,useCORS:true,backgroundColor:'#fff'});
       canvas.toBlob(async(blob)=>{
         const file=new File([blob],`${cert.certId.replace(/\//g,'-')}.png`,{type:'image/png'});
@@ -1885,7 +1914,7 @@ function ViewCertModal({cert,certTypes,onClose,verifyBaseUrl,verifyParam}){
           <button className="btn btn-wa" onClick={shareWhatsapp}>💬 WhatsApp</button>
         </div>
         <div id="print-target" ref={printRef}>
-          <CertificateView certType={ct} values={cert.values} certId={cert.certId} scale={1} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} issueDate={cert.issueDate}/>
+          <CertificateView certType={ct} values={cert.values} certId={cert.certId} scale={1} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} issueDate={cert.issueDate} teacherPhoto={cert.teacherPhoto}/>
         </div>
       </div>
     </div>
@@ -2001,7 +2030,7 @@ function EditCertModal({cert,certTypes,onClose,onSaved,fbOk,activeBranch,activeS
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
         </div>
         <div id="print-target" ref={printRef}>
-          <CertificateView certType={ct} values={values} certId={cert.certId} scale={1} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} issueDate={cert.issueDate}/>
+          <CertificateView certType={ct} values={values} certId={cert.certId} scale={1} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} issueDate={cert.issueDate} teacherPhoto={cert.teacherPhoto}/>
         </div>
       </div>
     </div>
@@ -2436,7 +2465,7 @@ useEffect(()=>{
         <div className="main">
           {tab==='types' && <TypesTab certTypes={certTypes} onOpenCreate={()=>setShowCreateType(true)} onSelectDesign={(id)=>{setDesignId(id);setTab('designer');}} onDelete={deleteType} onReplaceImage={replaceTypeImage}/>}
           {tab==='designer' && <DesignerTab certType={activeDesignType} certTypes={certTypes} onUpdate={updateType} onSaveCloud={saveTypeToCloud} onReplaceImage={replaceTypeImage} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} onBack={()=>setTab('types')}/>}
-          {tab==='create' && <CreateTab certTypes={certTypes} branchCode={branchCode} onGenerated={onGenerated} fbOk={fbOk} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} onBack={()=>setTab('types')}/>}
+          {tab==='create' && <CreateTab certTypes={certTypes} branchCode={branchCode} onGenerated={onGenerated} fbOk={fbOk} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam} onBack={()=>setTab('types')} activeBranch={activeBranch} activeSession={activeSession}/>}
           {tab==='history' && <HistoryTab certificates={certificates} certTypes={certTypes} fbOk={fbOk} onRefresh={reloadCerts} onView={setViewingCert} onEdit={setEditingCert} onDelete={deleteCert} verifyBaseUrl={verifyBaseUrl} verifyParam={verifyParam}/>}
         </div>
       </div>
